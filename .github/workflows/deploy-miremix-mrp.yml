@@ -40,4 +40,4 @@ jobs:
         run: |
           printf '%s' "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          npx firebase-tools deploy --only hosting --project "${{ secrets.FIREBASE_PROJECT_ID }}"
+          npx firebase-tools deploy --only hosting --project "gen-lang-client-0021754998"
