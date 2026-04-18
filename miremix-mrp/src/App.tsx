@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { ChefHat, LogIn, ExternalLink, Plus, Factory, RadioTower, ShieldCheck, Sparkles, Menu, X, LayoutDashboard, ScrollText, Warehouse, FlaskConical } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
@@ -397,7 +397,7 @@ function NavTab({
   active: boolean;
   onClick: () => void;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
 }) {
   return (
     <li
