@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChefHat, LogIn, ExternalLink, Plus, Factory, RadioTower, ShieldCheck, Sparkles } from 'lucide-react';
+import { ChefHat, LogIn, ExternalLink, Plus, Factory, RadioTower, ShieldCheck, Sparkles, Menu, X, LayoutDashboard, ScrollText, Warehouse, FlaskConical } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
 import { Recipes } from './components/Recipes';
@@ -17,6 +17,14 @@ export default function App() {
   const [activeLocationId, setActiveLocationId] = useState<string>('default');
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [newLocName, setNewLocName] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard },
+    { id: 'recipes', label: 'Recipe Manager', mobileLabel: 'Recipes', icon: ScrollText },
+    { id: 'inventory', label: 'Inventory Master', mobileLabel: 'Stock', icon: Warehouse },
+    { id: 'batch', label: 'Batch Mix Builder', mobileLabel: 'Batch', icon: FlaskConical },
+  ] as const;
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -87,6 +95,7 @@ export default function App() {
   const allowedDomains = ['@40centurygrain.com', '@40centurygrain.earth', '@mergeimpact.com'];
   const isAllowedDomain = user?.email ? allowedDomains.some((domain) => user.email!.endsWith(domain)) : false;
   const allowedDomainLabel = allowedDomains.join(', ');
+  const activeNav = navItems.find((item) => item.id === activeTab) ?? navItems[0];
 
   if (!authReady) {
     return (
@@ -189,8 +198,25 @@ export default function App() {
 
   return (
     <div className="mrp-shell flex h-screen w-full overflow-hidden font-sans bg-bg-main text-zinc-900">
-      <aside className="w-[296px] bg-[radial-gradient(circle_at_top,_rgba(244,182,63,0.14),_transparent_24%),linear-gradient(180deg,_var(--color-bg-side),_var(--color-bg-side-soft))] text-white flex flex-col shrink-0 border-r border-white/6">
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-[2px] lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[296px] -translate-x-full bg-[radial-gradient(circle_at_top,_rgba(244,182,63,0.14),_transparent_24%),linear-gradient(180deg,_var(--color-bg-side),_var(--color-bg-side-soft))] text-white flex flex-col shrink-0 border-r border-white/6 transition-transform duration-200 lg:static lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : ''}`}>
         <div className="px-6 py-8 flex flex-col items-start gap-4 border-b border-white/8">
+          <div className="flex w-full items-center justify-between lg:hidden">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200/70">Navigation</span>
+            <button
+              type="button"
+              className="rounded-full border border-white/10 p-2 text-zinc-300"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 text-accent ring-1 ring-white/10">
               <Factory className="h-6 w-6" />
@@ -246,10 +272,18 @@ export default function App() {
 
         <nav className="flex-1 px-4 py-8">
           <ul className="list-none p-0 m-0 flex flex-col gap-1">
-            <NavTab active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} label="Production Dashboard" />
-            <NavTab active={activeTab === 'recipes'} onClick={() => setActiveTab('recipes')} label="Recipe Manager" />
-            <NavTab active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} label="Inventory Master" />
-            <NavTab active={activeTab === 'batch'} onClick={() => setActiveTab('batch')} label="Batch Mix Builder" />
+            {navItems.map((item) => (
+              <NavTab
+                key={item.id}
+                active={activeTab === item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsMobileMenuOpen(false);
+                }}
+                label={item.label}
+                icon={item.icon}
+              />
+            ))}
 
             <div className="my-6 border-t border-white/8 mx-2"></div>
 
@@ -284,6 +318,24 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col bg-transparent overflow-hidden">
+        <div className="border-b border-black/5 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white/90 text-slate-700 shadow-sm"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="mrp-panel-label">MiRemix MRP</div>
+              <div className="truncate font-display text-xl font-bold tracking-tight text-zinc-950">{activeNav.label}</div>
+            </div>
+            <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">
+              Live
+            </div>
+          </div>
+        </div>
         <div className="border-b border-black/5 bg-white/50 px-6 py-5 backdrop-blur-xl">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
@@ -301,18 +353,52 @@ export default function App() {
             </div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 md:p-8">
+        <div className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 lg:pb-8">
           {activeTab === 'dashboard' && <Dashboard locationId={activeLocationId} />}
           {activeTab === 'inventory' && <Inventory locationId={activeLocationId} />}
           {activeTab === 'recipes' && <Recipes locationId={activeLocationId} />}
           {activeTab === 'batch' && <BatchMixBuilder locationId={activeLocationId} />}
+        </div>
+
+        <div className="border-t border-black/5 bg-white/88 px-2 py-2 backdrop-blur-xl lg:hidden">
+          <div className="grid grid-cols-4 gap-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  className={`flex min-h-[64px] flex-col items-center justify-center rounded-2xl px-2 py-2 text-[11px] font-semibold transition-all ${
+                    isActive
+                      ? 'bg-zinc-900 text-white shadow-lg shadow-zinc-300'
+                      : 'text-zinc-500 hover:bg-white'
+                  }`}
+                >
+                  <Icon className="mb-1 h-4 w-4" />
+                  <span>{item.mobileLabel}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </main>
     </div>
   );
 }
 
-function NavTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function NavTab({
+  active,
+  onClick,
+  label,
+  icon: Icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
   return (
     <li
       onClick={onClick}
@@ -322,6 +408,7 @@ function NavTab({ active, onClick, label }: { active: boolean; onClick: () => vo
           : 'text-zinc-400 hover:text-white hover:bg-white/6'
       }`}
     >
+      <Icon className="h-4 w-4" />
       {label}
     </li>
   );
