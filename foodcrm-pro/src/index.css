@@ -1,9 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
 }
 
 @layer base {
@@ -80,38 +81,38 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --background: oklch(0.982 0.008 95.3);
+    --foreground: oklch(0.242 0.018 248.24);
+    --card: oklch(0.997 0.004 95.61);
+    --card-foreground: oklch(0.242 0.018 248.24);
+    --popover: oklch(0.997 0.004 95.61);
+    --popover-foreground: oklch(0.242 0.018 248.24);
+    --primary: oklch(0.61 0.151 154.35);
+    --primary-foreground: oklch(0.992 0.004 106.47);
+    --secondary: oklch(0.954 0.012 92.61);
+    --secondary-foreground: oklch(0.292 0.018 248.24);
+    --muted: oklch(0.954 0.012 92.61);
+    --muted-foreground: oklch(0.523 0.016 247.88);
+    --accent: oklch(0.935 0.031 152.13);
+    --accent-foreground: oklch(0.242 0.018 248.24);
+    --destructive: oklch(0.603 0.215 26.34);
+    --border: oklch(0.898 0.014 93.25);
+    --input: oklch(0.898 0.014 93.25);
+    --ring: oklch(0.61 0.151 154.35 / 70%);
+    --chart-1: oklch(0.61 0.151 154.35);
+    --chart-2: oklch(0.67 0.104 222.7);
+    --chart-3: oklch(0.76 0.121 82.56);
+    --chart-4: oklch(0.67 0.117 21.34);
+    --chart-5: oklch(0.54 0.078 312.81);
+    --radius: 1rem;
+    --sidebar: oklch(0.215 0.021 258.33);
+    --sidebar-foreground: oklch(0.974 0.007 95.1);
+    --sidebar-primary: oklch(0.61 0.151 154.35);
+    --sidebar-primary-foreground: oklch(0.992 0.004 106.47);
+    --sidebar-accent: oklch(0.286 0.02 258.33);
+    --sidebar-accent-foreground: oklch(0.974 0.007 95.1);
+    --sidebar-border: oklch(0.325 0.018 258.33);
+    --sidebar-ring: oklch(0.61 0.151 154.35 / 70%);
 }
 
 .dark {
@@ -154,8 +155,35 @@
     }
   body {
     @apply bg-background text-foreground;
-    }
+    background-image:
+      radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 28%),
+      radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 24%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 248, 243, 0.98));
+    min-height: 100vh;
+  }
   html {
     @apply font-sans;
-    }
+  }
+}
+
+@layer utilities {
+  .crm-shell {
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.92)),
+      repeating-linear-gradient(
+        90deg,
+        rgba(15, 23, 42, 0.03) 0,
+        rgba(15, 23, 42, 0.03) 1px,
+        transparent 1px,
+        transparent 24px
+      );
+  }
+
+  .crm-panel {
+    @apply border border-white/70 bg-white/80 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] backdrop-blur-xl;
+  }
+
+  .crm-kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700/80;
+  }
 }
