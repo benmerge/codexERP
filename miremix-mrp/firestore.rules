@@ -1,0 +1,91 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: inventory
+// Fields:
+//   - name: string (required)
+//   - unit: string (required)
+//   - quantity: number (required)
+//   - lastUpdated: string (ISO date)
+//
+// Collection: recipes
+// Fields:
+//   - name: string (required)
+//   - ingredients: array of objects { ingredientId: string, amount: number }
+//
+// Collection: logs
+// Fields:
+//   - recipeName: string
+//   - multiplier: number
+//   - timestamp: string
+//   - userName: string
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function is40CenturyGrain() {
+      return isAuthenticated() && 
+             request.auth.token.email_verified == true &&
+             (request.auth.token.email == "ben@40centurygrain.com" || 
+              request.auth.token.email == "ben@mergeimpact.com" ||
+              request.auth.token.email.lower().endsWith("@40centurygrain.com") ||
+              request.auth.token.email.lower().endsWith("@40centurygrain.earth") ||
+              request.auth.token.email.lower().endsWith("@mergeimpact.com"));
+    }
+
+    function isValidInventory(data) {
+      return data.name is string && 
+             (data.quantityOnHand is number || data.quantityOnHand is float);
+    }
+
+    function isValidRecipe(data) {
+      return data.name is string && data.ingredients is list;
+    }
+
+    function isValidLog(data) {
+      return data.recipeName is string && data.multiplier is number;
+    }
+
+    // Orders (from CRM)
+    match /orders/{id} {
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated(); // Allow status updates locally
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Ingredients
+    match /inventory/{id} {
+      allow read: if isAuthenticated();
+      // Allow creation/modification for authorized staff
+      allow create: if is40CenturyGrain() && isValidInventory(request.resource.data);
+      allow update: if is40CenturyGrain() && isValidInventory(request.resource.data);
+      allow delete: if is40CenturyGrain();
+    }
+
+    // Recipes
+    match /recipes/{id} {
+      allow read: if isAuthenticated();
+      allow create: if is40CenturyGrain() && isValidRecipe(request.resource.data);
+      allow update: if is40CenturyGrain() && isValidRecipe(request.resource.data);
+      allow delete: if is40CenturyGrain();
+    }
+
+    // Logs
+    match /logs/{id} {
+      allow read: if isAuthenticated();
+      allow create: if is40CenturyGrain() && isValidLog(request.resource.data);
+    }
+  }
+}
