@@ -90,7 +90,8 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
       setIsResetOpen(false);
     } catch (error) {
       console.error('Failed to reset shared test org:', error);
-      alert('Failed to reset shared test org.');
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to reset shared test org: ${message}`);
     } finally {
       setIsResetting(false);
     }
