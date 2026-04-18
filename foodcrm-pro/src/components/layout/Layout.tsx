@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle, Sparkles, Building2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../../data/AppContext';
 import mergeLogo from '../../assets/merge-impact-logo.png';
@@ -100,7 +100,7 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
   return (
     <>
       <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md crm-panel">
           <DialogHeader>
             <DialogTitle>Reset Shared Test Org</DialogTitle>
             <DialogDescription>
@@ -120,13 +120,25 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
         </DialogContent>
       </Dialog>
 
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full border-r border-slate-800">
-        <div className="p-6 flex items-center gap-3 text-white">
-          <div className="w-8 h-8 rounded bg-emerald-500 flex items-center justify-center font-bold text-white shadow-lg shadow-emerald-500/20">
-            M
+      <aside className="w-72 bg-[radial-gradient(circle_at_top,_rgba(52,211,153,0.18),_transparent_28%),linear-gradient(180deg,_rgba(15,23,42,0.98),_rgba(17,24,39,0.98))] text-slate-300 flex flex-col h-full border-r border-white/10">
+        <div className="p-6 text-white">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-400/20 text-emerald-200 shadow-lg shadow-emerald-950/30 ring-1 ring-emerald-300/20">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-200/70">Merge Ops</span>
+              <span className="font-semibold text-xl tracking-tight block leading-tight">MiCRM Pro</span>
+            </div>
           </div>
-          <div>
-            <span className="font-semibold text-lg tracking-tight block leading-tight">MiCRM Pro</span>
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 backdrop-blur">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-200/70">
+              <Sparkles className="h-3.5 w-3.5" />
+              Shared Workspace
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-300/90">
+              One operational view for sales, inventory, and fulfillment across the entire team.
+            </p>
           </div>
         </div>
         
@@ -139,8 +151,8 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                   isActive 
-                    ? 'bg-emerald-500/10 text-emerald-400 font-medium' 
-                    : 'hover:bg-slate-800 hover:text-white'
+                    ? 'bg-emerald-400/12 text-emerald-200 font-medium shadow-inner shadow-emerald-950/10' 
+                    : 'hover:bg-white/6 hover:text-white'
                 }`
               }
             >
@@ -151,14 +163,23 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
           <button
             type="button"
             onClick={() => setIsResetOpen(true)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-amber-300 transition-colors hover:bg-slate-800 hover:text-amber-200"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-amber-200 transition-colors hover:bg-white/6 hover:text-amber-100"
           >
             <RotateCcw className="w-5 h-5" />
             Reset Test Org
           </button>
         </nav>
         
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-white/10">
+          <div className="mb-4 rounded-2xl border border-emerald-300/10 bg-emerald-300/8 px-4 py-3 text-[11px] text-emerald-100/85">
+            <div className="flex items-center gap-2 font-semibold uppercase tracking-[0.24em] text-emerald-200/70">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Live Sync Active
+            </div>
+            <p className="mt-2 leading-5 text-slate-300">
+              Orders, status updates, and fulfillment context stay aligned with MiRemix in real time.
+            </p>
+          </div>
           <div className="flex items-center justify-between px-3 py-2 mb-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-sm font-medium text-white overflow-hidden">
@@ -173,12 +194,12 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
                 <span className="text-xs text-slate-500 truncate">{user?.email}</span>
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={logout} className="text-slate-400 hover:text-white hover:bg-slate-800" title="Sign Out">
+            <Button variant="ghost" size="icon" onClick={logout} className="text-slate-400 hover:text-white hover:bg-white/8" title="Sign Out">
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
           
-          <div className="flex flex-col items-center justify-center pt-4 border-t border-slate-800/50">
+          <div className="flex flex-col items-center justify-center pt-4 border-t border-white/10">
             <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Powered by</span>
             <div className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors">
               <img src={mergeLogo} alt="Merge Impact" className="w-6 h-6 object-contain invert opacity-70" onError={(e) => {
@@ -201,7 +222,7 @@ export const Layout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans">
+    <div className="crm-shell flex h-screen w-full overflow-hidden font-sans">
       {/* Mobile overlay */}
       {isMobileMenuOpen && (
         <div 
@@ -216,18 +237,36 @@ export const Layout = () => {
       </div>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-4">
+        <header className="h-24 border-b border-slate-200/70 bg-white/75 px-6 shrink-0 backdrop-blur-xl">
+          <div className="flex h-full items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu className="w-5 h-5" />
             </Button>
-          </div>
-          <div className="flex items-center gap-4">
-            <ClientLogoUpload />
+              <div>
+                <div className="crm-kicker">Operations Command</div>
+                <div className="flex items-end gap-3">
+                  <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Shared Revenue Workspace</h1>
+                  <span className="hidden sm:inline font-serif text-xl italic text-emerald-700/80">Built for live coordination</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="hidden md:flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50/90 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Shared Org Online
+              </div>
+              <div className="hidden lg:flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-600">
+                CRM + MRP Sync
+              </div>
+              <ClientLogoUpload />
+            </div>
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+        <main className="flex-1 overflow-auto p-4 md:p-6 xl:p-8">
+          <div className="mx-auto max-w-[1600px]">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
