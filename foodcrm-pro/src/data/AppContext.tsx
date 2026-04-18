@@ -571,7 +571,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         doc(db, 'users', dataId),
         {
           orgId: dataId,
-          seededAt: new Date().toISOString(),
         },
         { merge: true }
       );
