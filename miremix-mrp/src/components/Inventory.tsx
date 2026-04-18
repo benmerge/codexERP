@@ -23,10 +23,32 @@ export function Inventory({ locationId }: { locationId: string }) {
         id: doc.id,
         ...doc.data()
       })) as Ingredient[];
-      
-      // Filter logically if old dataset exists, or strictly match locationId
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
-      
+
+      if (locationId === 'all') {
+        const grouped = new Map<string, Ingredient>();
+        items.forEach((item) => {
+          const key = `${item.name}__${item.category}__${item.unit}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.quantityOnHand += item.quantityOnHand || 0;
+            const existingUpdated = existing.lastUpdated ? new Date(existing.lastUpdated).getTime() : 0;
+            const itemUpdated = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
+            if (itemUpdated > existingUpdated) existing.lastUpdated = item.lastUpdated;
+          } else {
+            grouped.set(key, {
+              ...item,
+              id: key,
+              locationId: 'all',
+              quantityOnHand: item.quantityOnHand || 0,
+            });
+          }
+        });
+        items = Array.from(grouped.values());
+      } else {
+        items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      }
+
+      items.sort((a, b) => a.name.localeCompare(b.name));
       setInventory(items);
       setLoading(false);
     }, (error) => {
@@ -41,8 +63,10 @@ export function Inventory({ locationId }: { locationId: string }) {
   const [showConfirmReset, setShowConfirmReset] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newItem, setNewItem] = useState({ name: '', category: 'Major Ingredient' as any, unit: 'kg', qty: '0' });
+  const isTotalInventoryView = locationId === 'all';
 
   const handleReconcile = async (ingredientId: string) => {
+    if (isTotalInventoryView) return;
     const val = parseFloat(editValue);
     if (isNaN(val)) return;
     
@@ -62,6 +86,7 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleClearAll = async () => {
+    if (isTotalInventoryView) return;
     setIsUploading(true);
     setStatus(null);
     setShowConfirmReset(false);
@@ -69,14 +94,18 @@ export function Inventory({ locationId }: { locationId: string }) {
       const q = query(collection(db, 'inventory'));
       const snapshot = await getDocs(q);
       const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => batch.delete(d.ref));
+      snapshot.docs.forEach((d) => {
+        const data = d.data();
+        if (data.locationId === locationId || (!data.locationId && locationId === 'default')) {
+          batch.delete(d.ref);
+        }
+      });
       await batch.commit();
       setStatus({ type: 'success', msg: 'Inventory cleared successfully.' });
       setTimeout(() => setStatus(null), 5000);
     } catch (err) {
       console.error(err);
       setStatus({ type: 'error', msg: 'Failed to clear inventory. Permission denied or system error.' });
-      // Still call for log purposes
       try { handleFirestoreError(err, OperationType.DELETE, 'inventory/all'); } catch(e) {}
     } finally {
       setIsUploading(false);
@@ -84,6 +113,10 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isTotalInventoryView) {
+      setStatus({ type: 'error', msg: 'Choose a physical location before importing inventory.' });
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -97,18 +130,15 @@ export function Inventory({ locationId }: { locationId: string }) {
         const batch = writeBatch(db);
         let count = 0;
         
-        // Define potential header aliases
         const idKeys = ['product id', 'id', 'sku', 'code', 'part number'];
         const nameKeys = ['name', 'ingredient', 'item', 'description', 'component'];
         const qtyKeys = ['on hand', 'quantityonhand', 'qty', 'amount', 'stock', 'onhand', 'quantity'];
         const unitKeys = ['category', 'unit', 'uom', 'measure', 'type'];
 
         results.data.forEach((row: any) => {
-          // Normalize row keys
           const normalizedRow: any = {};
           Object.keys(row).forEach(k => normalizedRow[k.toLowerCase().trim()] = row[k]);
 
-          // Find matches by checking for key existence in the normalized map
           const matchedKeys: any = {};
           ['id', 'name', 'qty', 'unit'].forEach(type => {
             const aliases = 
@@ -121,7 +151,6 @@ export function Inventory({ locationId }: { locationId: string }) {
             if (found) matchedKeys[type] = found;
           });
 
-          // Extract values strictly
           const nameValue = (matchedKeys.name ? normalizedRow[matchedKeys.name] : null) || row.Name || row.name || row.Item || '';
           const name = String(nameValue).trim();
           
@@ -143,7 +172,6 @@ export function Inventory({ locationId }: { locationId: string }) {
             const lowCat = String(cat).toLowerCase();
             const lowName = String(itemName).toLowerCase();
             
-            // Explicitly check for "Finished Good" label or characteristic product keywords
             if (lowCat.includes('finished') || lowCat.includes('good') || lowCat.includes('product')) return 'Finished Good';
             if (lowName.includes('mix') || lowName.includes('granola')) return 'Finished Good';
             
@@ -154,14 +182,15 @@ export function Inventory({ locationId }: { locationId: string }) {
           const category = categoryMapping(String(rawUnit), name);
           const unitLabel = category === 'Finished Good' ? 'units' : 'kg';
 
-          // Clean up quantity: handle "6.0", "1,200", "$10.50", etc.
           const cleanQtyStr = String(rawQty).replace(/[^0-9.-]/g, '');
           const qty = parseFloat(cleanQtyStr);
           const finalQty = isNaN(qty) ? 0 : qty;
 
-          const docRef = doc(db, 'inventory', String(rawId).trim());
+          const scopedId = `${locationId}__${String(rawId).trim()}`;
+          const docRef = doc(db, 'inventory', scopedId);
           
           batch.set(docRef, {
+            id: scopedId,
             name,
             unit: unitLabel,
             category,
@@ -199,6 +228,7 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleAddItem = async () => {
+    if (isTotalInventoryView) return;
     if (!newItem.name.trim()) return;
     setIsUploading(true);
     setStatus(null);
@@ -226,6 +256,7 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleDeleteItem = async (id: string) => {
+    if (isTotalInventoryView) return;
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     setIsUploading(true);
     try {
@@ -245,14 +276,16 @@ export function Inventory({ locationId }: { locationId: string }) {
       <div className="flex justify-between items-end border-b border-zinc-200 pb-6">
         <div>
           <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Inventory Master</h2>
-          <p className="text-[13px] text-zinc-500 mt-1">Central stock records and reconciliation</p>
+          <p className="text-[13px] text-zinc-500 mt-1">
+            {isTotalInventoryView ? 'Aggregated inventory across every physical location' : 'Central stock records and reconciliation'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {(loading || isUploading) && <Loader2 className="h-4 w-4 text-accent animate-spin" />}
           
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            disabled={isUploading}
+            disabled={isUploading || isTotalInventoryView}
             className="px-4 py-2 bg-white border border-zinc-200 text-zinc-600 rounded text-[12px] font-bold flex items-center gap-2 hover:bg-zinc-50 transition-colors"
           >
             <Box className="h-3.5 w-3.5" />
@@ -281,7 +314,7 @@ export function Inventory({ locationId }: { locationId: string }) {
               ) : (
                 <button
                   onClick={() => setShowConfirmReset(true)}
-                  disabled={isUploading}
+                  disabled={isUploading || isTotalInventoryView}
                   className="px-4 py-2 bg-white border border-red-200 text-red-600 rounded text-[12px] font-bold flex items-center gap-2 hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -300,7 +333,7 @@ export function Inventory({ locationId }: { locationId: string }) {
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || isTotalInventoryView}
             className="px-4 py-2 bg-zinc-900 text-white rounded text-[12px] font-bold flex items-center gap-2 hover:bg-black transition-colors"
           >
             <Upload className="h-4 w-4" />
@@ -309,7 +342,13 @@ export function Inventory({ locationId }: { locationId: string }) {
         </div>
       </div>
 
-      {showAddForm && (
+      {isTotalInventoryView && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          Total Inventory is a read-only rollup. Choose a named physical location like <span className="font-semibold">Sterling, IL</span> to import, reconcile, or edit stock.
+        </div>
+      )}
+
+      {showAddForm && !isTotalInventoryView && (
         <div className="technical-card p-4 bg-zinc-50 border-zinc-200 animate-in fade-in slide-in-from-top-2">
           <div className="flex flex-col gap-4">
             <h3 className="text-[12px] font-bold text-zinc-800 uppercase tracking-widest">New Inventory Item</h3>
@@ -390,7 +429,9 @@ export function Inventory({ locationId }: { locationId: string }) {
                 <tr>
                   <td colSpan={6} className="py-24 text-center">
                     <Box className="h-10 w-10 text-zinc-100 mx-auto mb-4" />
-                    <p className="text-zinc-400 text-sm italic">Inventory database is empty. Upload a CSV to begin.</p>
+                    <p className="text-zinc-400 text-sm italic">
+                      {isTotalInventoryView ? 'No inventory has been entered for any location yet.' : 'Inventory database is empty. Upload a CSV to begin.'}
+                    </p>
                   </td>
                 </tr>
               ) : (
@@ -475,14 +516,16 @@ export function Inventory({ locationId }: { locationId: string }) {
                                   setEditingId(item.id);
                                   setEditValue(item.quantityOnHand.toString());
                                 }}
-                                className="p-1.5 hover:bg-zinc-100 rounded transition-all hover:text-zinc-900"
+                                disabled={isTotalInventoryView}
+                                className="p-1.5 hover:bg-zinc-100 rounded transition-all hover:text-zinc-900 disabled:opacity-40 disabled:hover:bg-transparent"
                                 title="Reconcile Stock"
                               >
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDeleteItem(item.id)}
-                                className="p-1.5 hover:bg-red-50 text-red-400 hover:text-red-600 rounded transition-all"
+                                disabled={isTotalInventoryView}
+                                className="p-1.5 hover:bg-red-50 text-red-400 hover:text-red-600 rounded transition-all disabled:opacity-40 disabled:hover:bg-transparent"
                                 title="Delete Item"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -502,4 +545,3 @@ export function Inventory({ locationId }: { locationId: string }) {
     </div>
   );
 }
-
