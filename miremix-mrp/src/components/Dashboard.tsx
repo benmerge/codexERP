@@ -117,10 +117,19 @@ export function Dashboard({ locationId }: { locationId: string }) {
   return (
     <div className="w-full space-y-8 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-zinc-200 pb-6">
+      <div className="flex flex-col gap-4 rounded-[2rem] border border-white/70 bg-white/70 px-6 py-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.32)] backdrop-blur xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Production Dashboard</h2>
-          <p className="text-[13px] text-zinc-500 mt-1">Real-time fulfillment & inventory status</p>
+          <div className="mrp-panel-label">Today&apos;s Control Board</div>
+          <h2 className="mt-2 font-display text-3xl font-bold text-zinc-900 tracking-tight">Production Dashboard</h2>
+          <p className="mt-2 text-[13px] text-zinc-500">Real-time fulfillment, queue pressure, and inventory status in one view.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-700">
+            {orders.length} Open Orders
+          </div>
+          <div className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-600">
+            {lowStockItems.length} Stock Alerts
+          </div>
         </div>
       </div>
 
@@ -150,11 +159,11 @@ export function Dashboard({ locationId }: { locationId: string }) {
               </div>
             ) : (
               orders.map(order => (
-                <div key={order.id} className="technical-card p-6 flex flex-col md:flex-row md:items-center gap-8 group">
+                <div key={order.id} className="technical-card p-6 flex flex-col gap-8 border-l-4 border-l-amber-400 md:flex-row md:items-center group">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-                      <h4 className="text-[17px] font-bold text-zinc-900 leading-tight">{order.customerName}</h4>
+                      <h4 className="font-display text-[22px] font-bold text-zinc-900 leading-tight">{order.customerName}</h4>
                     </div>
                     <div className="flex items-center gap-4 text-[11px] text-zinc-400 font-mono">
                       <span>REF: {order.id}</span>
@@ -163,8 +172,8 @@ export function Dashboard({ locationId }: { locationId: string }) {
                     </div>
                   </div>
                   
-                  <div className="min-w-[200px] max-w-[300px]">
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2 tracking-wider">Inventory Requirements</p>
+                  <div className="min-w-[220px] max-w-[320px]">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2 tracking-wider">Production Loadout</p>
                     <p className="text-[12px] text-zinc-600 line-clamp-2 leading-relaxed">
                       {Array.isArray(order.items) 
                         ? order.items.map((i: any) => `${i.quantity || 1}x ${i.name || i.productName}`).join(', ')
@@ -172,10 +181,14 @@ export function Dashboard({ locationId }: { locationId: string }) {
                     </p>
                   </div>
 
-                  <div className="flex shrink-0">
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="hidden xl:flex flex-col rounded-2xl border border-zinc-200 bg-white/70 px-4 py-3 text-right">
+                      <span className="mrp-panel-label text-zinc-400">Status</span>
+                      <span className="mt-1 text-sm font-semibold text-zinc-700">Ready to ship</span>
+                    </div>
                     <button 
                       onClick={() => handleShipOrder(order.id, order.rawId)}
-                      className="bg-zinc-900 border border-zinc-800 hover:bg-black text-white px-8 py-3.5 rounded-lg text-[12px] font-bold transition-all shadow-lg shadow-zinc-200 active:translate-y-px"
+                      className="rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-black text-white px-8 py-3.5 text-[12px] font-bold tracking-[0.18em] uppercase transition-all shadow-lg shadow-zinc-200 active:translate-y-px"
                     >
                       MARK SHIPPED
                     </button>
