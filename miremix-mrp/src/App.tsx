@@ -14,7 +14,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [locations, setLocations] = useState<LocationDef[]>([]);
-  const [activeLocationId, setActiveLocationId] = useState<string>('default');
+  const [activeLocationId, setActiveLocationId] = useState<string>('all');
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [newLocName, setNewLocName] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -42,8 +42,8 @@ export default function App() {
         setDoc(doc(db, 'locations', 'default'), defaultLoc);
       } else {
         setLocations(locs);
-        if (!locs.find((l) => l.id === activeLocationId)) {
-          setActiveLocationId(locs[0].id);
+        if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId)) {
+          setActiveLocationId('all');
         }
       }
     });
@@ -61,27 +61,29 @@ export default function App() {
         createdAt: new Date().toISOString(),
       });
 
-      const batch = writeBatch(db);
+      if (activeLocationId !== 'all') {
+        const batch = writeBatch(db);
 
-      const invSnap = await getDocs(query(collection(db, 'inventory')));
-      invSnap.docs.forEach((d) => {
-        const data = d.data();
-        if (data.locationId === activeLocationId || (!data.locationId && activeLocationId === 'default')) {
-          const newDocRef = doc(collection(db, 'inventory'));
-          batch.set(newDocRef, { ...data, id: newDocRef.id, locationId: locId, quantityOnHand: 0 });
-        }
-      });
+        const invSnap = await getDocs(query(collection(db, 'inventory')));
+        invSnap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.locationId === activeLocationId || (!data.locationId && activeLocationId === 'default')) {
+            const newDocRef = doc(collection(db, 'inventory'));
+            batch.set(newDocRef, { ...data, id: newDocRef.id, locationId: locId, quantityOnHand: 0 });
+          }
+        });
 
-      const recSnap = await getDocs(query(collection(db, 'recipes')));
-      recSnap.docs.forEach((d) => {
-        const data = d.data();
-        if (data.locationId === activeLocationId || (!data.locationId && activeLocationId === 'default')) {
-          const newDocRef = doc(collection(db, 'recipes'));
-          batch.set(newDocRef, { ...data, id: newDocRef.id, locationId: locId });
-        }
-      });
+        const recSnap = await getDocs(query(collection(db, 'recipes')));
+        recSnap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.locationId === activeLocationId || !data.locationId) {
+            const newDocRef = doc(collection(db, 'recipes'));
+            batch.set(newDocRef, { ...data, id: newDocRef.id, locationId: locId });
+          }
+        });
 
-      await batch.commit();
+        await batch.commit();
+      }
 
       setActiveLocationId(locId);
       setNewLocName('');
@@ -96,6 +98,8 @@ export default function App() {
   const isAllowedDomain = user?.email ? allowedDomains.some((domain) => user.email!.endsWith(domain)) : false;
   const allowedDomainLabel = allowedDomains.join(', ');
   const activeNav = navItems.find((item) => item.id === activeTab) ?? navItems[0];
+  const locationOptions: LocationDef[] = [{ id: 'all', name: 'Total Inventory' }, ...locations];
+  const activeLocation = locationOptions.find((loc) => loc.id === activeLocationId) ?? locationOptions[0];
 
   if (!authReady) {
     return (
@@ -242,7 +246,7 @@ export default function App() {
               onChange={(e) => setActiveLocationId(e.target.value)}
               className="w-full rounded-2xl border border-white/10 bg-white/6 px-3 py-3 text-sm text-white focus:outline-none focus:border-accent"
             >
-              {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+              {locationOptions.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
             </select>
             {isCreatingLocation ? (
               <div className="mt-2 space-y-2">
@@ -262,9 +266,9 @@ export default function App() {
               <button
                 onClick={() => setIsCreatingLocation(true)}
                 className="mt-2 text-[11px] font-bold text-accent flex items-center gap-1 hover:text-white transition-colors"
-                title="Creates a new location with copied structure and 0 inventory"
+                title={activeLocationId === 'all' ? 'Create a new named physical location' : 'Create a new location with copied structure and 0 inventory'}
               >
-                <Plus className="h-3 w-3" /> CREATE LOCATION
+                <Plus className="h-3 w-3" /> ADD LOCATION
               </button>
             )}
           </div>
@@ -330,6 +334,7 @@ export default function App() {
             <div className="min-w-0 flex-1">
               <div className="mrp-panel-label">MiRemix MRP</div>
               <div className="truncate font-display text-xl font-bold tracking-tight text-zinc-950">{activeNav.label}</div>
+              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400">{activeLocation?.name}</div>
             </div>
             <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">
               Live
@@ -342,6 +347,7 @@ export default function App() {
               <div className="mrp-panel-label">Production Control</div>
               <h2 className="font-display text-3xl font-bold tracking-tight text-zinc-950">Live fulfillment workspace</h2>
               <p className="mt-1 text-sm text-ink-soft">Monitor the queue, keep stock balanced, and push shipment completion back to CRM.</p>
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Scope: {activeLocation?.name}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-700">
