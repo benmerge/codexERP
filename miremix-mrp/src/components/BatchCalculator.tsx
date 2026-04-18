@@ -6,6 +6,26 @@ import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { crmService, type CRMOrder } from '../services/crmService';
 
+const convertMeasurement = (amount: number, fromUnit: string, toUnit: string) => {
+  const from = fromUnit.toLowerCase();
+  const to = toUnit.toLowerCase();
+
+  if (from === to) return amount;
+
+  const weightToGrams: Record<string, number> = { g: 1, kg: 1000 };
+  const volumeToMilliliters: Record<string, number> = { ml: 1, l: 1000 };
+
+  if (from in weightToGrams && to in weightToGrams) {
+    return (amount * weightToGrams[from]) / weightToGrams[to];
+  }
+
+  if (from in volumeToMilliliters && to in volumeToMilliliters) {
+    return (amount * volumeToMilliliters[from]) / volumeToMilliliters[to];
+  }
+
+  return amount;
+};
+
 export function BatchMixBuilder({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<Ingredient[]>([]);
@@ -40,20 +60,21 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
   }, [locationId]);
 
   const selectedRecipe = recipes.find(r => r.id === selectedRecipeId);
+  const selectedRecipeName = selectedRecipe?.finishedGoodName || selectedRecipe?.name || 'Selected recipe';
 
   const requirements = selectedRecipe ? selectedRecipe.ingredients.map(ing => {
     const item = inventory.find(i => i.id === ing.ingredientId);
-    const requiredG = ing.amount * batchMultiplier;
-    const isGramsToKg = item?.unit === 'kg';
-    const requiredInInvUnit = isGramsToKg ? (requiredG / 1000) : requiredG;
+    const recipeUnit = ing.unit || 'g';
+    const inventoryUnit = item?.unit || recipeUnit;
+    const requiredInInvUnit = convertMeasurement(ing.amount * batchMultiplier, recipeUnit, inventoryUnit);
     const onHand = item?.quantityOnHand || 0;
     const missing = Math.max(0, requiredInInvUnit - onHand);
     
     return {
       ingredientId: ing.ingredientId,
       name: item?.name || 'Unknown',
-      unitInInv: item?.unit || 'kg',
-      requiredG,
+      recipeUnit,
+      unitInInv: inventoryUnit,
       requiredInInvUnit,
       onHand,
       missing,
@@ -80,7 +101,10 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       });
 
       // Increment Finished Good
-      const targetFinishedGood = inventory.find(i => i.category === 'Finished Good' && i.name === selectedRecipe.name);
+      const targetFinishedGood = inventory.find((i) =>
+        i.category === 'Finished Good' &&
+        (i.id === selectedRecipe.finishedGoodId || i.name === selectedRecipeName)
+      );
       if (targetFinishedGood && targetFinishedGood.id) {
         const fgRef = doc(db, 'inventory', targetFinishedGood.id);
         batch.update(fgRef, {
@@ -90,7 +114,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       }
 
       await addDoc(collection(db, 'logs'), {
-        recipeName: selectedRecipe.name,
+        recipeName: selectedRecipeName,
         multiplier: batchMultiplier,
         timestamp: new Date().toISOString(),
         locationId,
@@ -98,7 +122,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       });
 
       await batch.commit();
-      setStatus({ type: 'success', msg: `Successfully logged batch for ${selectedRecipe.name}` });
+      setStatus({ type: 'success', msg: `Successfully logged batch for ${selectedRecipeName}` });
       setTimeout(() => setStatus(null), 5000);
       setBatchMultiplier(1);
     } catch (err) {
@@ -132,7 +156,6 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        {/* Main Composition Table */}
         <div className="xl:col-span-8 space-y-4">
           <div className="technical-card overflow-hidden">
             <div className="bg-zinc-50 border-b border-zinc-100 px-6 py-4 flex justify-between items-center">
@@ -165,7 +188,9 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
                             <span className="text-[14px] font-bold text-zinc-800">{req.name}</span>
-                            <span className="text-[10px] text-zinc-400 font-mono tracking-wider">{req.requiredG.toLocaleString()}g formula weight</span>
+                            <span className="text-[10px] text-zinc-400 font-mono tracking-wider">
+                              {(req.requiredInInvUnit / batchMultiplier || 0).toLocaleString()} {req.recipeUnit} per unit
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right font-mono font-bold text-[15px] text-zinc-900">
@@ -196,8 +221,8 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">Total Mixed Yield Projection</p>
                   <p className="text-3xl font-bold tracking-tight">
-                    {(selectedRecipe.ingredients.reduce((a, b) => a + b.amount, 0) * batchMultiplier).toLocaleString()}
-                    <span className="text-xs ml-2 text-zinc-600 font-sans uppercase">total grams</span>
+                    {batchMultiplier.toLocaleString()}
+                    <span className="text-xs ml-2 text-zinc-600 font-sans uppercase">finished units</span>
                   </p>
                 </div>
                 <button
@@ -217,7 +242,6 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
           </div>
         </div>
 
-        {/* Control Sidebar */}
         <div className="xl:col-span-4 space-y-6">
           <div className="technical-card p-6 space-y-6">
             <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
@@ -233,7 +257,11 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                   className="w-full bg-white border border-zinc-200 rounded px-4 py-3 font-bold text-zinc-900 text-[14px] focus:outline-none focus:ring-2 focus:ring-accent/10 transition-all cursor-pointer"
                 >
                   <option value="">Select a mix...</option>
-                  {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  {recipes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.finishedGoodName || r.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -281,4 +309,3 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
     </div>
   );
 }
-
