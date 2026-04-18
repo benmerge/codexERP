@@ -14,14 +14,19 @@ export interface Ingredient {
   lastUpdated?: string;
 }
 
+export type RecipeMeasureUnit = 'g' | 'kg' | 'ml';
+
 export interface RecipeIngredient {
   ingredientId: string;
   amount: number;
+  unit: RecipeMeasureUnit;
 }
 
 export interface Recipe {
   id: string;
   locationId?: string;
   name: string;
+  finishedGoodId?: string;
+  finishedGoodName?: string;
   ingredients: RecipeIngredient[];
 }
