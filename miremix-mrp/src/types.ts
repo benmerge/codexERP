@@ -18,6 +18,7 @@ export type RecipeMeasureUnit = 'g' | 'kg' | 'ml';
 
 export interface RecipeIngredient {
   ingredientId: string;
+  ingredientName?: string;
   amount: number;
   unit: RecipeMeasureUnit;
 }
