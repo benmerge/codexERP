@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, type ComponentType } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChefHat, LogIn, ExternalLink, Plus, Factory, RadioTower, Menu, X, LayoutDashboard, ScrollText, Warehouse, FlaskConical, Upload, Pencil, Power, Check } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
@@ -53,7 +53,17 @@ export default function App() {
     if (!user) return;
     const unsubscribe = onSnapshot(query(collection(db, 'locations')), (snap) => {
       const locs = snap.docs
-        .map((d) => ({ id: d.id, isActive: true, ...d.data() } as LocationDef))
+        .map((d) => {
+          const data = d.data() as Partial<LocationDef>;
+          return {
+            id: d.id,
+            name: data.name ?? 'Unnamed Location',
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+            deactivatedAt: data.deactivatedAt,
+            isActive: data.isActive ?? true,
+          } satisfies LocationDef;
+        })
         .sort((left, right) => left.name.localeCompare(right.name));
       if (locs.length === 0) {
         const defaultLoc = {
@@ -480,18 +490,27 @@ export default function App() {
 
         <nav className="flex-1 px-4 py-8">
           <ul className="list-none p-0 m-0 flex flex-col gap-1">
-            {navItems.map((item) => (
-              <NavTab
-                key={item.id}
-                active={activeTab === item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setIsMobileMenuOpen(false);
-                }}
-                label={item.label}
-                icon={item.icon}
-              />
-            ))}
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <li
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-[14px] font-medium cursor-pointer flex items-center gap-3 rounded-2xl transition-all ${
+                    isActive
+                      ? 'bg-white/10 text-accent font-bold shadow-inner shadow-black/10'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/6'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </li>
+              );
+            })}
 
             <div className="my-6 border-t border-white/8 mx-2"></div>
 
@@ -603,31 +622,5 @@ export default function App() {
         </div>
       </main>
     </div>
-  );
-}
-
-function NavTab({
-  active,
-  onClick,
-  label,
-  icon: Icon,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-}) {
-  return (
-    <li
-      onClick={onClick}
-      className={`px-4 py-3 text-[14px] font-medium cursor-pointer flex items-center gap-3 rounded-2xl transition-all ${
-        active
-          ? 'bg-white/10 text-accent font-bold shadow-inner shadow-black/10'
-          : 'text-zinc-400 hover:text-white hover:bg-white/6'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </li>
   );
 }
