@@ -2,6 +2,9 @@ export interface LocationDef {
   id: string;
   name: string;
   createdAt?: string;
+  isActive?: boolean;
+  updatedAt?: string;
+  deactivatedAt?: string;
 }
 
 export interface Ingredient {
