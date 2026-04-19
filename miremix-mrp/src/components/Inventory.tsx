@@ -5,7 +5,7 @@ import { collection, onSnapshot, query, setDoc, doc, writeBatch, deleteDoc, getD
 import { db } from '../firebase';
 import { type Ingredient } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { normalizeInventoryCategory, normalizeIngredient } from '../lib/inventoryCategories';
+import { INVENTORY_CATEGORIES, normalizeInventoryCategory, normalizeIngredient } from '../lib/inventoryCategories';
 import { v4 as uuidv4 } from 'uuid';
 import { Edit2, Check, X } from 'lucide-react';
 
@@ -65,8 +65,13 @@ export function Inventory({ locationId }: { locationId: string }) {
   const [isUploading, setIsUploading] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<'all' | Ingredient['category']>('all');
   const [newItem, setNewItem] = useState({ name: '', category: 'Major Ingredient' as any, unit: 'kg', qty: '0' });
   const isTotalInventoryView = locationId === 'all';
+  const filteredInventory =
+    categoryFilter === 'all'
+      ? inventory
+      : inventory.filter((item) => item.category === categoryFilter);
 
   const handleReconcile = async (ingredientId: string) => {
     if (isTotalInventoryView) return;
@@ -280,6 +285,18 @@ export function Inventory({ locationId }: { locationId: string }) {
         </div>
         <div className="flex items-center gap-3">
           {(loading || isUploading) && <Loader2 className="h-4 w-4 text-accent animate-spin" />}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value as 'all' | Ingredient['category'])}
+            className="rounded border border-zinc-200 bg-white px-3 py-2 text-[12px] font-bold text-zinc-600"
+          >
+            <option value="all">ALL CATEGORIES</option>
+            {INVENTORY_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category.toUpperCase()}
+              </option>
+            ))}
+          </select>
           
           <button
             onClick={() => setShowAddForm(!showAddForm)}
@@ -423,17 +440,19 @@ export function Inventory({ locationId }: { locationId: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {inventory.length === 0 && !loading ? (
+              {filteredInventory.length === 0 && !loading ? (
                 <tr>
                   <td colSpan={6} className="py-24 text-center">
                     <Box className="h-10 w-10 text-zinc-100 mx-auto mb-4" />
                     <p className="text-zinc-400 text-sm italic">
-                      {isTotalInventoryView ? 'No inventory has been entered for any location yet.' : 'Inventory database is empty. Upload a CSV to begin.'}
+                      {inventory.length === 0
+                        ? (isTotalInventoryView ? 'No inventory has been entered for any location yet.' : 'Inventory database is empty. Upload a CSV to begin.')
+                        : 'No inventory matches the selected category.'}
                     </p>
                   </td>
                 </tr>
               ) : (
-                inventory.map((item) => {
+                filteredInventory.map((item) => {
                   const isLow = (item.category === 'Major Ingredient' && item.quantityOnHand < 20) || 
                                 (item.category === 'Minor Ingredient' && item.quantityOnHand < 5);
                   
