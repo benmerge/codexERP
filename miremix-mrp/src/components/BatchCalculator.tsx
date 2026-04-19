@@ -4,6 +4,7 @@ import { CheckCircle2, AlertTriangle, Scale, ArrowRight, Loader2, History, Shopp
 import { collection, onSnapshot, query, addDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { normalizeIngredient } from '../lib/inventoryCategories';
 import { crmService, type CRMOrder } from '../services/crmService';
 
 const convertMeasurement = (amount: number, fromUnit: string, toUnit: string) => {
@@ -40,6 +41,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
 
     const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
+      items = items.map(normalizeIngredient);
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
         items.forEach((item) => {
@@ -111,6 +113,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
     try {
       const batch = writeBatch(db);
       
+      // Deduct Ingredients
       requirements.forEach(req => {
         if (!req.inventoryDocId) return;
         const docRef = doc(db, 'inventory', req.inventoryDocId);
@@ -120,6 +123,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
         });
       });
 
+      // Increment Finished Good
       const targetFinishedGood = inventory.find((i) =>
         i.category === 'Finished Good' &&
         (i.id === selectedRecipe.finishedGoodId || i.name === selectedRecipeName)
@@ -175,6 +179,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+        {/* Main Composition Table */}
         <div className="xl:col-span-8 space-y-4">
           <div className="technical-card overflow-hidden">
             <div className="bg-zinc-50 border-b border-zinc-100 px-6 py-4 flex justify-between items-center">
@@ -261,6 +266,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
           </div>
         </div>
 
+        {/* Control Sidebar */}
         <div className="xl:col-span-4 space-y-6">
           <div className="technical-card p-6 space-y-6">
             <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
