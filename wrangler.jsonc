@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mergetools",
+  "compatibility_date": "2026-04-19",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "foodcrm-pro"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
