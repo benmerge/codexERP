@@ -66,7 +66,12 @@ export function Inventory({ locationId }: { locationId: string }) {
   const [showConfirmReset, setShowConfirmReset] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'all' | Ingredient['category']>('all');
-  const [newItem, setNewItem] = useState({ name: '', category: 'Major Ingredient' as any, unit: 'kg', qty: '0' });
+  const [newItem, setNewItem] = useState<{ name: string; category: Ingredient['category']; unit: string; qty: string }>({
+    name: '',
+    category: 'Major Ingredient',
+    unit: 'kg',
+    qty: '0',
+  });
   const isTotalInventoryView = locationId === 'all';
   const filteredInventory =
     categoryFilter === 'all'
@@ -378,7 +383,7 @@ export function Inventory({ locationId }: { locationId: string }) {
               <select 
                 className="px-3 py-2 border border-zinc-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 bg-white"
                 value={newItem.category}
-                onChange={e => setNewItem({...newItem, category: e.target.value as any})}
+                onChange={(e) => setNewItem({ ...newItem, category: e.target.value as Ingredient['category'] })}
               >
                 <option value="Major Ingredient">Major Ingredient</option>
                 <option value="Minor Ingredient">Minor Ingredient</option>
