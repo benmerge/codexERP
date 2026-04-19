@@ -14,6 +14,9 @@ export interface Customer {
   company: string;
   email: string;
   phone: string;
+  salesRepId?: string;
+  salesRepName?: string;
+  salesRepEmail?: string;
   isProspect: boolean;
   category: CustomerCategory;
   pipelineStage: PipelineStage;
@@ -32,6 +35,14 @@ export interface Task {
   createdAt?: string;
 }
 
+export interface OrgMember {
+  id: string;
+  email: string;
+  displayName?: string;
+  orgId?: string;
+  role?: string;
+}
+
 export type OrderStatus = 'Order placed' | 'Shipped' | 'Delivered' | 'Cancelled';
 
 export interface OrderItem {
@@ -48,6 +59,9 @@ export interface Order {
   customerName?: string;
   customerCompany?: string;
   customerEmail?: string;
+  salesRepId?: string;
+  salesRepName?: string;
+  salesRepEmail?: string;
   date: string;
   amount?: number;
   status: OrderStatus;
