@@ -1,11 +1,11 @@
-import { useState, useEffect, type ComponentType } from 'react';
-import { ChefHat, LogIn, ExternalLink, Plus, Factory, RadioTower, ShieldCheck, Sparkles, Menu, X, LayoutDashboard, ScrollText, Warehouse, FlaskConical } from 'lucide-react';
+import React, { useState, useEffect, useRef, type ComponentType } from 'react';
+import { ChefHat, LogIn, ExternalLink, Plus, Factory, RadioTower, Menu, X, LayoutDashboard, ScrollText, Warehouse, FlaskConical, Upload, Pencil, Power, Check } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
 import { Recipes } from './components/Recipes';
 import { BatchMixBuilder } from './components/BatchCalculator';
 import { auth, login, logout, onAuthStateChanged, type User, db } from './firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch, updateDoc, deleteField } from 'firebase/firestore';
 import { type LocationDef } from './types';
 import { crmConfig } from './config';
 
@@ -17,7 +17,12 @@ export default function App() {
   const [activeLocationId, setActiveLocationId] = useState<string>('all');
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [newLocName, setNewLocName] = useState('');
+  const [isManagingLocations, setIsManagingLocations] = useState(false);
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+  const [editingLocationName, setEditingLocationName] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [clientLogo, setClientLogo] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard },
@@ -34,15 +39,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'branding'), (snapshot) => {
+      if (snapshot.exists()) {
+        setClientLogo((snapshot.data().clientLogo as string | undefined) || null);
+      } else {
+        setClientLogo(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     const unsubscribe = onSnapshot(query(collection(db, 'locations')), (snap) => {
-      const locs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as LocationDef));
+      const locs = snap.docs
+        .map((d) => ({ id: d.id, isActive: true, ...d.data() } as LocationDef))
+        .sort((left, right) => left.name.localeCompare(right.name));
       if (locs.length === 0) {
-        const defaultLoc = { id: 'default', name: 'Main Facility', createdAt: new Date().toISOString() };
+        const defaultLoc = {
+          id: 'default',
+          name: 'Main Facility',
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
         setDoc(doc(db, 'locations', 'default'), defaultLoc);
       } else {
         setLocations(locs);
-        if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId)) {
+        if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId && l.isActive !== false)) {
           setActiveLocationId('all');
         }
       }
@@ -58,7 +82,9 @@ export default function App() {
       await setDoc(doc(db, 'locations', locId), {
         id: locId,
         name: newLocName.trim(),
+        isActive: true,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
 
       if (activeLocationId !== 'all') {
@@ -88,17 +114,87 @@ export default function App() {
       setActiveLocationId(locId);
       setNewLocName('');
       setIsCreatingLocation(false);
+      setIsManagingLocations(false);
     } catch (e) {
       console.error(e);
       alert('Failed to copy location structure.');
     }
   };
 
+  const startEditingLocation = (location: LocationDef) => {
+    setEditingLocationId(location.id);
+    setEditingLocationName(location.name);
+  };
+
+  const handleRenameLocation = async (locationId: string) => {
+    const trimmed = editingLocationName.trim();
+    if (!trimmed) return;
+
+    try {
+      await updateDoc(doc(db, 'locations', locationId), {
+        name: trimmed,
+        updatedAt: new Date().toISOString(),
+      });
+      setEditingLocationId(null);
+      setEditingLocationName('');
+    } catch (error) {
+      console.error(error);
+      alert('Failed to update location name.');
+    }
+  };
+
+  const handleToggleLocationActive = async (location: LocationDef) => {
+    const nextActive = location.isActive === false;
+
+    try {
+      await updateDoc(doc(db, 'locations', location.id), {
+        isActive: nextActive,
+        updatedAt: new Date().toISOString(),
+        deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
+      });
+      if (!nextActive && activeLocationId === location.id) {
+        setActiveLocationId('all');
+      }
+    } catch (error) {
+      console.error(error);
+      alert(`Failed to ${nextActive ? 'reactivate' : 'deactivate'} location.`);
+    }
+  };
+
+  const handleLogoFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 500 * 1024) {
+      alert('File is too large. Please select an image under 500KB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        await setDoc(doc(db, 'settings', 'branding'), {
+          clientLogo: reader.result as string,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (error) {
+        console.error(error);
+        alert('Failed to update logo.');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const allowedDomains = ['@40centurygrain.com', '@40centurygrain.earth', '@mergeimpact.com'];
   const isAllowedDomain = user?.email ? allowedDomains.some((domain) => user.email!.endsWith(domain)) : false;
   const allowedDomainLabel = allowedDomains.join(', ');
   const activeNav = navItems.find((item) => item.id === activeTab) ?? navItems[0];
-  const locationOptions: LocationDef[] = [{ id: 'all', name: 'Total Inventory' }, ...locations];
+  const activeLocations = locations.filter((location) => location.isActive !== false);
+  const inactiveLocations = locations.filter((location) => location.isActive === false);
+  const locationOptions: LocationDef[] = [{ id: 'all', name: 'Total Inventory' }, ...activeLocations];
   const activeLocation = locationOptions.find((loc) => loc.id === activeLocationId) ?? locationOptions[0];
 
   if (!authReady) {
@@ -119,37 +215,43 @@ export default function App() {
               <div className="absolute bottom-0 left-10 h-32 w-32 rounded-full bg-emerald-400/10 blur-3xl" />
               <div className="relative">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/15 text-amber-200 ring-1 ring-amber-200/20">
-                    <Factory className="h-7 w-7" />
-                  </div>
+                  {clientLogo ? (
+                    <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/10">
+                      <img src={clientLogo} alt="Client Logo" className="h-full w-full object-contain p-2" />
+                    </div>
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/15 text-amber-200 ring-1 ring-amber-200/20">
+                      <Factory className="h-7 w-7" />
+                    </div>
+                  )}
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.34em] text-amber-200/70">40 Century Grain</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.34em] text-amber-200/70">Operations</div>
                     <h1 className="font-display text-4xl font-bold tracking-tight">MiRemix MRP</h1>
                   </div>
                 </div>
                 <p className="mt-8 max-w-xl text-lg leading-8 text-slate-200/92">
-                  Production control for live order intake, inventory visibility, and shipment confirmation back into the CRM.
+                  Production planning, inventory, and order shipment updates.
                 </p>
                 <div className="mt-8 grid gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="mrp-panel-label text-amber-200/70">Signal</div>
+                    <div className="mrp-panel-label text-amber-200/70">Orders</div>
                     <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-white">
                       <RadioTower className="h-4 w-4 text-emerald-300" />
-                      CRM Queue Live
+                      CRM Orders
                     </div>
                   </div>
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="mrp-panel-label text-amber-200/70">Action</div>
+                    <div className="mrp-panel-label text-amber-200/70">Inventory</div>
                     <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-white">
-                      <Sparkles className="h-4 w-4 text-amber-300" />
-                      Mark Shipped Fast
+                      <Warehouse className="h-4 w-4 text-amber-300" />
+                      Stock by Location
                     </div>
                   </div>
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="mrp-panel-label text-amber-200/70">Trust</div>
+                    <div className="mrp-panel-label text-amber-200/70">Status</div>
                     <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-white">
-                      <ShieldCheck className="h-4 w-4 text-sky-300" />
-                      Shared Status Sync
+                      <Factory className="h-4 w-4 text-sky-300" />
+                      Shipment Updates
                     </div>
                   </div>
                 </div>
@@ -163,8 +265,8 @@ export default function App() {
                   </div>
                 </div>
                 <div className="space-y-2 text-center lg:text-left">
-                  <h2 className="font-display text-3xl font-bold tracking-tight text-slate-900">Shift-ready production cockpit</h2>
-                  <p className="text-slate-500">Sign in with an approved company account to open the live production workspace.</p>
+                  <h2 className="font-display text-3xl font-bold tracking-tight text-slate-900">Production workspace</h2>
+                  <p className="text-slate-500">Sign in with an approved company account.</p>
                 </div>
                 <button
                   onClick={() => login()}
@@ -222,20 +324,43 @@ export default function App() {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 text-accent ring-1 ring-white/10">
-              <Factory className="h-6 w-6" />
-            </div>
+            {clientLogo ? (
+              <button
+                type="button"
+                className="group flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/10"
+                onClick={() => fileInputRef.current?.click()}
+                title="Update client logo"
+              >
+                <img src={clientLogo} alt="Client Logo" className="h-full w-full object-contain p-2" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 text-accent ring-1 ring-white/10"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload client logo"
+              >
+                <Factory className="h-6 w-6" />
+              </button>
+            )}
             <div className="flex flex-col">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200/70">Merge Ops</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200/70">Operations</span>
               <span className="font-display text-[22px] font-bold tracking-tight leading-none">MiRemix MRP</span>
-              <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest mt-1">40 Century Grain</span>
+              <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest mt-1">Shared Workspace</span>
             </div>
           </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleLogoFileChange}
+          />
 
           <div className="w-full rounded-[1.4rem] border border-white/8 bg-white/5 p-4 backdrop-blur">
-            <div className="mrp-panel-label text-amber-200/70">Realtime Link</div>
+            <div className="mrp-panel-label text-amber-200/70">CRM</div>
             <p className="mt-2 text-sm leading-6 text-zinc-300">
-              Pending CRM orders flow in here for production and sync back the moment you ship.
+              Orders are read from the CRM and updated when shipped.
             </p>
           </div>
 
@@ -263,13 +388,92 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <button
-                onClick={() => setIsCreatingLocation(true)}
-                className="mt-2 text-[11px] font-bold text-accent flex items-center gap-1 hover:text-white transition-colors"
-                title={activeLocationId === 'all' ? 'Create a new named physical location' : 'Create a new location with copied structure and 0 inventory'}
-              >
-                <Plus className="h-3 w-3" /> ADD LOCATION
-              </button>
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  onClick={() => setIsCreatingLocation(true)}
+                  className="text-[11px] font-bold text-accent flex items-center gap-1 hover:text-white transition-colors"
+                  title={activeLocationId === 'all' ? 'Create a new named physical location' : 'Create a new location with copied structure and 0 inventory'}
+                >
+                  <Plus className="h-3 w-3" /> ADD LOCATION
+                </button>
+                <button
+                  onClick={() => setIsManagingLocations((current) => !current)}
+                  className="text-[11px] font-bold text-zinc-400 flex items-center gap-1 hover:text-white transition-colors"
+                >
+                  <Pencil className="h-3 w-3" /> {isManagingLocations ? 'HIDE MANAGER' : 'MANAGE'}
+                </button>
+              </div>
+            )}
+            {isManagingLocations && !isCreatingLocation && (
+              <div className="mt-3 space-y-2 rounded-2xl border border-white/10 bg-white/6 p-3">
+                <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-zinc-500">Locations</div>
+                {locations.length === 0 ? (
+                  <p className="text-[12px] text-zinc-400">No saved locations yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {locations.map((location) => (
+                      <div key={location.id} className="rounded-xl border border-white/8 bg-black/10 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            {editingLocationId === location.id ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={editingLocationName}
+                                  onChange={(e) => setEditingLocationName(e.target.value)}
+                                  className="w-full rounded-xl border border-white/10 bg-white/8 px-3 py-2 text-[12px] text-white focus:outline-none focus:border-accent"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenameLocation(location.id)}
+                                  className="rounded-full border border-emerald-300/20 p-2 text-emerald-300"
+                                >
+                                  <Check className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="truncate text-sm font-semibold text-white">{location.name}</div>
+                                <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+                                  {location.isActive === false ? 'Inactive' : 'Active'}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {editingLocationId !== location.id && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditingLocation(location)}
+                                className="rounded-full border border-white/10 p-2 text-zinc-300 hover:text-white"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleLocationActive(location)}
+                                className={`rounded-full border p-2 ${
+                                  location.isActive === false
+                                    ? 'border-emerald-300/20 text-emerald-300'
+                                    : 'border-amber-300/20 text-amber-300'
+                                }`}
+                                title={location.isActive === false ? 'Reactivate location' : 'Deactivate location'}
+                              >
+                                <Power className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {inactiveLocations.length > 0 && (
+                      <p className="text-[11px] text-zinc-500">
+                        Inactive locations are hidden from the main selector but can be reactivated here.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -311,6 +515,14 @@ export default function App() {
             </div>
             <div className="mt-2 text-sm font-semibold text-white">CRM Connected</div>
           </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-300 transition-colors hover:bg-white/10"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {clientLogo ? 'Update Logo' : 'Upload Logo'}
+          </button>
           <div className="flex items-center gap-3">
             <img src={user.photoURL ?? ''} className="h-8 w-8 rounded-full border border-zinc-700" alt="" referrerPolicy="no-referrer" />
             <div className="flex-1 overflow-hidden">
@@ -337,24 +549,24 @@ export default function App() {
               <div className="truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400">{activeLocation?.name}</div>
             </div>
             <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">
-              Live
+              Connected
             </div>
           </div>
         </div>
         <div className="border-b border-black/5 bg-white/50 px-6 py-5 backdrop-blur-xl">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="mrp-panel-label">Production Control</div>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-zinc-950">Live fulfillment workspace</h2>
-              <p className="mt-1 text-sm text-ink-soft">Monitor the queue, keep stock balanced, and push shipment completion back to CRM.</p>
+              <div className="mrp-panel-label">Operations</div>
+              <h2 className="font-display text-3xl font-bold tracking-tight text-zinc-950">Production workspace</h2>
+              <p className="mt-1 text-sm text-ink-soft">Manage orders, inventory, recipes, and batch activity.</p>
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Scope: {activeLocation?.name}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-700">
-                Shared Order Feed
+                CRM Connected
               </div>
               <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-amber-700">
-                Shipping Sync Enabled
+                Shipping Updates On
               </div>
             </div>
           </div>
