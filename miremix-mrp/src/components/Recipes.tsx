@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import { type Recipe, type Ingredient, type RecipeIngredient, type RecipeMeasureUnit } from '../types';
-import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload } from 'lucide-react';
-import { collection, onSnapshot, query, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload, Pencil } from 'lucide-react';
+import { collection, onSnapshot, query, addDoc, deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { normalizeIngredient } from '../lib/inventoryCategories';
@@ -39,7 +39,12 @@ const scoreMatch = (left: string, right: string) => {
   return overlap / Math.max(leftTokens.length, rightTokens.length);
 };
 
-const pickBestMatch = <T,>(items: T[], getLabel: (item: T) => string, target: string, minimumScore = 0.45) => {
+const pickBestMatch = <T,>(
+  items: T[],
+  getLabel: (item: T) => string,
+  target: string,
+  minimumScore = 0.45
+): T | undefined => {
   let best: { item: T; score: number } | null = null;
 
   items.forEach((item) => {
@@ -109,8 +114,12 @@ export function Recipes({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<Ingredient[]>([]);
   const [isDrafting, setIsDrafting] = useState(false);
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [editingRecipeLocationId, setEditingRecipeLocationId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [draftFinishedGoodId, setDraftFinishedGoodId] = useState('');
+  const [newFinishedGoodName, setNewFinishedGoodName] = useState('');
+  const [newFinishedGoodUnit, setNewFinishedGoodUnit] = useState('units');
   const [draftIngredients, setDraftIngredients] = useState<DraftRecipeIngredient[]>([]);
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -202,13 +211,22 @@ export function Recipes({ locationId }: { locationId: string }) {
 
   const resetDraft = () => {
     setIsDrafting(false);
+    setEditingRecipeId(null);
+    setEditingRecipeLocationId('all');
     setDraftFinishedGoodId('');
+    setNewFinishedGoodName('');
+    setNewFinishedGoodUnit('units');
     setDraftIngredients([]);
   };
 
   const beginDraft = () => {
     setStatus(null);
     setIsDrafting(true);
+    setEditingRecipeId(null);
+    setEditingRecipeLocationId(locationId);
+    setDraftFinishedGoodId('');
+    setNewFinishedGoodName('');
+    setNewFinishedGoodUnit('units');
     if (draftIngredients.length === 0) {
       setDraftIngredients([
         {
@@ -222,11 +240,32 @@ export function Recipes({ locationId }: { locationId: string }) {
     }
   };
 
-  const matchFinishedGood = (fileName: string) => {
-    return pickBestMatch(finishedGoods, (item) => item.name, fileName, 0.34);
+  const beginEditRecipe = (recipe: Recipe) => {
+    setStatus(null);
+    setIsDrafting(true);
+    setEditingRecipeId(recipe.id);
+    setEditingRecipeLocationId(recipe.locationId || 'all');
+    setDraftFinishedGoodId(recipe.finishedGoodId || '');
+    setNewFinishedGoodName(recipe.finishedGoodName || recipe.name || '');
+    setNewFinishedGoodUnit(
+      inventory.find((item) => item.id === recipe.finishedGoodId || item.name === recipe.finishedGoodName)?.unit || 'units'
+    );
+    setDraftIngredients(
+      recipe.ingredients.map((ingredient) => ({
+        ingredientId: ingredient.ingredientId,
+        ingredientName: ingredient.ingredientName || getIngredientName(ingredient.ingredientId),
+        ingredientCategory: (inventory.find((item) => item.id === ingredient.ingredientId)?.category || 'Major Ingredient') as Ingredient['category'],
+        amount: ingredient.amount,
+        unit: ingredient.unit || 'g',
+      }))
+    );
   };
 
-  const matchIngredient = (rawName: string) => {
+  const matchFinishedGood = (fileName: string): Ingredient | undefined => {
+    return pickBestMatch<Ingredient>(finishedGoods, (item) => item.name, fileName, 0.34);
+  };
+
+  const matchIngredient = (rawName: string): Ingredient | undefined => {
     const candidates = [
       rawName,
       rawName.split(',')[0],
@@ -237,7 +276,7 @@ export function Recipes({ locationId }: { locationId: string }) {
       .filter(Boolean);
 
     for (const candidate of candidates) {
-      const exactish = pickBestMatch(sourceIngredients, (item) => item.name, candidate, 0.5);
+      const exactish = pickBestMatch<Ingredient>(sourceIngredients, (item) => item.name, candidate, 0.5);
       if (exactish) return exactish;
     }
 
@@ -278,9 +317,33 @@ export function Recipes({ locationId }: { locationId: string }) {
   };
 
   const handleSaveRecipe = async () => {
-    const finishedGood = inventory.find((item) => item.id === draftFinishedGoodId && item.category === 'Finished Good');
+    let finishedGood = inventory.find((item) => item.id === draftFinishedGoodId && item.category === 'Finished Good');
+    const recipeLocationId = editingRecipeLocationId || locationId;
+
+    if (!finishedGood && newFinishedGoodName.trim()) {
+      const targetLocationId = recipeLocationId === 'all' ? 'default' : recipeLocationId;
+      const finishedGoodRef = doc(collection(db, 'inventory'));
+      finishedGood = {
+        id: finishedGoodRef.id,
+        name: newFinishedGoodName.trim(),
+        category: 'Finished Good',
+        unit: newFinishedGoodUnit || 'units',
+        quantityOnHand: 0,
+        locationId: targetLocationId,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      try {
+        await setDoc(finishedGoodRef, finishedGood);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, 'inventory');
+        setStatus({ type: 'error', msg: 'Failed to create the finished good for this formula.' });
+        return;
+      }
+    }
+
     if (!finishedGood) {
-      setStatus({ type: 'error', msg: 'Choose a finished good before saving the formula.' });
+      setStatus({ type: 'error', msg: 'Choose a finished good or create a new one before saving the formula.' });
       return;
     }
 
@@ -302,12 +365,18 @@ export function Recipes({ locationId }: { locationId: string }) {
     }
 
     try {
-      await addDoc(collection(db, 'recipes'), buildRecipePayload(finishedGood, normalizedIngredients, locationId));
-      setStatus({ type: 'success', msg: `Saved formula for ${finishedGood.name}.` });
+      const payload = buildRecipePayload(finishedGood, normalizedIngredients, recipeLocationId);
+      if (editingRecipeId) {
+        await updateDoc(doc(db, 'recipes', editingRecipeId), payload);
+        setStatus({ type: 'success', msg: `Updated formula for ${finishedGood.name}.` });
+      } else {
+        await addDoc(collection(db, 'recipes'), payload);
+        setStatus({ type: 'success', msg: `Saved formula for ${finishedGood.name}.` });
+      }
       resetDraft();
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'recipes');
-      setStatus({ type: 'error', msg: 'Failed to save formula.' });
+      handleFirestoreError(err, editingRecipeId ? OperationType.UPDATE : OperationType.CREATE, 'recipes');
+      setStatus({ type: 'error', msg: `Failed to ${editingRecipeId ? 'update' : 'save'} formula.` });
     }
   };
 
@@ -370,7 +439,7 @@ export function Recipes({ locationId }: { locationId: string }) {
             const unmatchedMessages: string[] = [];
 
             for (const [finishedGoodLabel, recipeRows] of groupedRows.entries()) {
-              const finishedGood = pickBestMatch(finishedGoods, (item) => item.name, finishedGoodLabel, 0.45);
+              const finishedGood = pickBestMatch<Ingredient>(finishedGoods, (item) => item.name, finishedGoodLabel, 0.45);
               if (!finishedGood) {
                 unmatchedMessages.push(`Missing finished good: ${finishedGoodLabel}`);
                 continue;
@@ -520,7 +589,12 @@ export function Recipes({ locationId }: { locationId: string }) {
                 <select
                   className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-accent/20"
                   value={draftFinishedGoodId}
-                  onChange={(e) => setDraftFinishedGoodId(e.target.value)}
+                  onChange={(e) => {
+                    setDraftFinishedGoodId(e.target.value);
+                    if (e.target.value) {
+                      setNewFinishedGoodName('');
+                    }
+                  }}
                 >
                   <option value="">Select a Finished Good...</option>
                   {finishedGoods.map((fg) => (
@@ -545,6 +619,39 @@ export function Recipes({ locationId }: { locationId: string }) {
                     {category}
                   </span>
                 ))}
+              </div>
+              <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 p-4">
+                <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400">
+                  Or create a new finished good
+                </div>
+                <div className="grid gap-3 md:grid-cols-[1fr_140px]">
+                  <input
+                    type="text"
+                    value={newFinishedGoodName}
+                    onChange={(e) => {
+                      setNewFinishedGoodName(e.target.value);
+                      if (e.target.value.trim()) {
+                        setDraftFinishedGoodId('');
+                      }
+                    }}
+                    placeholder="New finished good name"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  />
+                  <select
+                    value={newFinishedGoodUnit}
+                    onChange={(e) => setNewFinishedGoodUnit(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  >
+                    <option value="units">units</option>
+                    <option value="kg">kg</option>
+                    <option value="g">g</option>
+                  </select>
+                </div>
+                <p className="mt-2 text-[11px] text-zinc-500">
+                  {locationId === 'all'
+                    ? 'New finished goods created here start in Main Facility and roll into Total Inventory.'
+                    : 'The new finished good will be created in this location and used for the formula.'}
+                </p>
               </div>
             </div>
             <button
@@ -664,11 +771,11 @@ export function Recipes({ locationId }: { locationId: string }) {
               {draftIngredients.length > 0 && (
                 <button
                   onClick={handleSaveRecipe}
-                  disabled={!draftFinishedGoodId || draftIngredients.every((ingredient) => ingredient.amount <= 0)}
+                  disabled={(!draftFinishedGoodId && !newFinishedGoodName.trim()) || draftIngredients.every((ingredient) => ingredient.amount <= 0)}
                   className="w-full mt-8 bg-accent text-zinc-900 py-4 rounded-lg text-[13px] font-bold flex items-center justify-center gap-2 hover:bg-amber-400 transition-colors shadow-lg shadow-amber-100 disabled:opacity-50"
                 >
                   <Save className="h-4 w-4" />
-                  Finalize Formula
+                  {editingRecipeId ? 'Update Formula' : 'Finalize Formula'}
                 </button>
               )}
             </div>
@@ -690,12 +797,20 @@ export function Recipes({ locationId }: { locationId: string }) {
               <div className="p-2 rounded bg-zinc-100 text-zinc-400">
                 <Beaker className="h-5 w-5" />
               </div>
-              <button
-                onClick={() => handleDeleteRecipe(recipe.id)}
-                className="p-1.5 opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-500 transition-all rounded"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                <button
+                  onClick={() => beginEditRecipe(recipe)}
+                  className="p-1.5 text-zinc-300 hover:text-zinc-600 transition-all rounded"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => handleDeleteRecipe(recipe.id)}
+                  className="p-1.5 text-zinc-300 hover:text-red-500 transition-all rounded"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             
             <div className="mb-6">
