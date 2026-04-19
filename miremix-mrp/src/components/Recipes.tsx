@@ -5,6 +5,7 @@ import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload } from 'luci
 import { collection, onSnapshot, query, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { normalizeIngredient } from '../lib/inventoryCategories';
 
 const CATEGORY_ORDER: Array<Ingredient['category']> = ['Finished Good', 'Major Ingredient', 'Minor Ingredient'];
 const MEASURE_UNITS: RecipeMeasureUnit[] = ['g', 'kg', 'ml'];
@@ -23,6 +24,55 @@ const normalizeLabel = (value: string) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
+const getMatchTokens = (value: string) =>
+  normalizeLabel(value)
+    .split(' ')
+    .filter((token) => token.length > 1);
+
+const scoreMatch = (left: string, right: string) => {
+  const leftTokens = getMatchTokens(left);
+  const rightTokens = getMatchTokens(right);
+  if (leftTokens.length === 0 || rightTokens.length === 0) return 0;
+
+  const rightSet = new Set(rightTokens);
+  const overlap = leftTokens.filter((token) => rightSet.has(token)).length;
+  return overlap / Math.max(leftTokens.length, rightTokens.length);
+};
+
+const pickBestMatch = <T,>(items: T[], getLabel: (item: T) => string, target: string, minimumScore = 0.45) => {
+  let best: { item: T; score: number } | null = null;
+
+  items.forEach((item) => {
+    const label = getLabel(item);
+    const normalizedLabel = normalizeLabel(label);
+    const normalizedTarget = normalizeLabel(target);
+
+    let score = scoreMatch(label, target);
+    if (normalizedLabel === normalizedTarget) score = 1;
+    else if (normalizedLabel.includes(normalizedTarget) || normalizedTarget.includes(normalizedLabel)) {
+      score = Math.max(score, 0.9);
+    }
+
+    if (!best || score > best.score) {
+      best = { item, score };
+    }
+  });
+
+  return best && best.score >= minimumScore ? best.item : undefined;
+};
+
+const getRowValue = (row: Record<string, string>, aliases: string[]) => {
+  const keys = Object.keys(row);
+  const normalizedMap = new Map(keys.map((key) => [key.toLowerCase().trim(), key]));
+  for (const alias of aliases) {
+    const actualKey = normalizedMap.get(alias.toLowerCase().trim());
+    if (actualKey) {
+      return String(row[actualKey] || '').trim();
+    }
+  }
+  return '';
+};
+
 export function Recipes({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<Ingredient[]>([]);
@@ -40,6 +90,7 @@ export function Recipes({ locationId }: { locationId: string }) {
     const qInv = query(collection(db, 'inventory'));
     const unsubInv = onSnapshot(qInv, (snapshot) => {
       let items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Ingredient[];
+      items = items.map(normalizeIngredient);
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
         items.forEach((item) => {
@@ -140,15 +191,7 @@ export function Recipes({ locationId }: { locationId: string }) {
   };
 
   const matchFinishedGood = (fileName: string) => {
-    const normalizedFileName = normalizeLabel(fileName);
-    return finishedGoods.find((item) => {
-      const normalizedItemName = normalizeLabel(item.name);
-      return (
-        normalizedItemName === normalizedFileName ||
-        normalizedItemName.includes(normalizedFileName) ||
-        normalizedFileName.includes(normalizedItemName)
-      );
-    });
+    return pickBestMatch(finishedGoods, (item) => item.name, fileName, 0.34);
   };
 
   const matchIngredient = (rawName: string) => {
@@ -156,18 +199,17 @@ export function Recipes({ locationId }: { locationId: string }) {
       rawName,
       rawName.split(',')[0],
       rawName.replace(/\s+-\s+.*/, ''),
+      rawName.replace(/\s*\([^)]*\)/g, ''),
     ]
-      .map((candidate) => normalizeLabel(candidate))
+      .map((candidate) => candidate.trim())
       .filter(Boolean);
 
-    return sourceIngredients.find((item) => {
-      const normalizedItemName = normalizeLabel(item.name);
-      return candidates.some((candidate) =>
-        normalizedItemName === candidate ||
-        normalizedItemName.includes(candidate) ||
-        candidate.includes(normalizedItemName)
-      );
-    });
+    for (const candidate of candidates) {
+      const exactish = pickBestMatch(sourceIngredients, (item) => item.name, candidate, 0.5);
+      if (exactish) return exactish;
+    }
+
+    return undefined;
   };
 
   const handleSaveRecipe = async () => {
@@ -197,7 +239,7 @@ export function Recipes({ locationId }: { locationId: string }) {
     try {
       await addDoc(collection(db, 'recipes'), {
         name: finishedGood.name,
-        finishedGoodId: locationId === 'all' ? undefined : finishedGood.id,
+        finishedGoodId: finishedGood.id,
         finishedGoodName: finishedGood.name,
         locationId: locationId === 'all' ? undefined : locationId,
         ingredients: normalizedIngredients,
@@ -229,8 +271,9 @@ export function Recipes({ locationId }: { locationId: string }) {
 
           const parsedIngredients = (results.data as Record<string, string>[])
             .map((row) => {
-              const ingredientName = (row['Ingredients'] || row['Ingredient'] || row['name'] || '').trim();
-              const gramsPerPackage = parseFloat(String(row['g per package'] || row['grams per package'] || row['Amount'] || '').trim());
+              const ingredientName = getRowValue(row, ['Ingredients', 'Ingredient', 'Name', 'Item']);
+              const gramsValue = getRowValue(row, ['g per package', 'grams per package', 'Amount', 'Qty', 'Quantity']);
+              const gramsPerPackage = parseFloat(gramsValue.replace(/[^0-9.-]/g, ''));
               return { ingredientName, gramsPerPackage };
             })
             .filter((row) => row.ingredientName && row.ingredientName.toLowerCase() !== 'total' && !Number.isNaN(row.gramsPerPackage));
@@ -262,7 +305,7 @@ export function Recipes({ locationId }: { locationId: string }) {
 
           await addDoc(collection(db, 'recipes'), {
             name: finishedGood.name,
-            finishedGoodId: locationId === 'all' ? undefined : finishedGood.id,
+            finishedGoodId: finishedGood.id,
             finishedGoodName: finishedGood.name,
             locationId: locationId === 'all' ? undefined : locationId,
             ingredients: recipeIngredients,
@@ -428,69 +471,68 @@ export function Recipes({ locationId }: { locationId: string }) {
                   draftIngredients.map((ri, index) => {
                     const categoryInventory = inventory.filter((item) => item.category === ri.ingredientCategory);
                     return (
-                      <div key={`${ri.ingredientId || 'draft'}-${index}`} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-4 md:grid-cols-[0.8fr_1.2fr_0.5fr_0.35fr_auto] md:items-center">
+                    <div key={`${ri.ingredientId || 'draft'}-${index}`} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-4 md:grid-cols-[0.8fr_1.2fr_0.5fr_0.35fr_auto] md:items-center">
+                      <select
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
+                        value={ri.ingredientCategory}
+                        onChange={(e) => updateDraftIngredient(index, { ingredientCategory: e.target.value as Ingredient['category'] })}
+                      >
+                        {FORMULA_LINE_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="min-w-0">
                         <select
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
-                          value={ri.ingredientCategory}
-                          onChange={(e) => updateDraftIngredient(index, { ingredientCategory: e.target.value as Ingredient['category'] })}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
+                          value={ri.ingredientId}
+                          onChange={(e) => {
+                            const ingredient = inventory.find((item) => item.id === e.target.value);
+                            updateDraftIngredient(index, {
+                              ingredientId: e.target.value,
+                              ingredientName: ingredient?.name || '',
+                            });
+                          }}
                         >
-                          {FORMULA_LINE_CATEGORIES.map((category) => (
-                            <option key={category} value={category}>
-                              {category}
+                          <option value="">Select ingredient...</option>
+                          {categoryInventory.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
                             </option>
                           ))}
                         </select>
-                        <div className="min-w-0">
-                          <select
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
-                            value={ri.ingredientId}
-                            onChange={(e) => {
-                              const ingredient = inventory.find((item) => item.id === e.target.value);
-                              updateDraftIngredient(index, {
-                                ingredientId: e.target.value,
-                                ingredientName: ingredient?.name || '',
-                              });
-                            }}
-                          >
-                            <option value="">Select ingredient...</option>
-                            {categoryInventory.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1">
-                            {ri.ingredientId ? getIngredientCategory(ri.ingredientId) : ri.ingredientCategory}
-                          </div>
+                        <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1">
+                          {ri.ingredientId ? getIngredientCategory(ri.ingredientId) : ri.ingredientCategory}
                         </div>
-                        <input
-                          type="number"
-                          step="0.001"
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-right font-mono text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
-                          value={ri.amount === 0 ? '' : ri.amount}
-                          onChange={(e) => updateDraftIngredient(index, { amount: parseFloat(e.target.value) || 0 })}
-                          placeholder="0"
-                        />
-                        <select
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
-                          value={ri.unit}
-                          onChange={(e) => updateDraftIngredient(index, { unit: e.target.value as RecipeMeasureUnit })}
-                        >
-                          {MEASURE_UNITS.map((unit) => (
-                            <option key={unit} value={unit}>
-                              {unit}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => removeDraftLine(index)}
-                          className="p-2 text-zinc-300 hover:text-red-500 rounded transition-colors justify-self-end"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
                       </div>
-                    );
-                  })
+                      <input
+                        type="number"
+                        step="0.001"
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-right font-mono text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
+                        value={ri.amount === 0 ? '' : ri.amount}
+                        onChange={(e) => updateDraftIngredient(index, { amount: parseFloat(e.target.value) || 0 })}
+                        placeholder="0"
+                      />
+                      <select
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
+                        value={ri.unit}
+                        onChange={(e) => updateDraftIngredient(index, { unit: e.target.value as RecipeMeasureUnit })}
+                      >
+                        {MEASURE_UNITS.map((unit) => (
+                          <option key={unit} value={unit}>
+                            {unit}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => removeDraftLine(index)}
+                        className="p-2 text-zinc-300 hover:text-red-500 rounded transition-colors justify-self-end"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )})
                 )}
               </div>
 
