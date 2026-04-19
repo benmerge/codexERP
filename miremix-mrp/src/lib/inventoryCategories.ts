@@ -6,6 +6,13 @@ export const INVENTORY_CATEGORIES: Ingredient['category'][] = [
   'Minor Ingredient',
 ];
 
+export const INGREDIENT_CATEGORIES: Exclude<Ingredient['category'], 'Finished Good'>[] = [
+  'Major Ingredient',
+  'Minor Ingredient',
+];
+
+export const CATEGORY_ORDER: Ingredient['category'][] = INVENTORY_CATEGORIES;
+
 export const normalizeInventoryCategory = (
   rawCategory: unknown,
   itemName: string
