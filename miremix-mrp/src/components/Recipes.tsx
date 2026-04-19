@@ -80,6 +80,31 @@ const getRecipeUnit = (rawUnit: string): RecipeMeasureUnit => {
   return 'g';
 };
 
+const buildRecipePayload = (
+  finishedGood: Ingredient,
+  ingredients: RecipeIngredient[],
+  locationId: string
+) => {
+  const payload: {
+    name: string;
+    finishedGoodId: string;
+    finishedGoodName: string;
+    ingredients: RecipeIngredient[];
+    locationId?: string;
+  } = {
+    name: finishedGood.name,
+    finishedGoodId: finishedGood.id,
+    finishedGoodName: finishedGood.name,
+    ingredients,
+  };
+
+  if (locationId !== 'all') {
+    payload.locationId = locationId;
+  }
+
+  return payload;
+};
+
 export function Recipes({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<Ingredient[]>([]);
@@ -277,13 +302,7 @@ export function Recipes({ locationId }: { locationId: string }) {
     }
 
     try {
-      await addDoc(collection(db, 'recipes'), {
-        name: finishedGood.name,
-        finishedGoodId: finishedGood.id,
-        finishedGoodName: finishedGood.name,
-        locationId: locationId === 'all' ? undefined : locationId,
-        ingredients: normalizedIngredients,
-      });
+      await addDoc(collection(db, 'recipes'), buildRecipePayload(finishedGood, normalizedIngredients, locationId));
       setStatus({ type: 'success', msg: `Saved formula for ${finishedGood.name}.` });
       resetDraft();
     } catch (err) {
@@ -373,11 +392,7 @@ export function Recipes({ locationId }: { locationId: string }) {
               }
 
               await addDoc(collection(db, 'recipes'), {
-                name: finishedGood.name,
-                finishedGoodId: finishedGood.id,
-                finishedGoodName: finishedGood.name,
-                locationId: locationId === 'all' ? undefined : locationId,
-                ingredients: recipeIngredients,
+                ...buildRecipePayload(finishedGood, recipeIngredients, locationId),
               });
 
               importedNames.push(finishedGood.name);
@@ -419,13 +434,7 @@ export function Recipes({ locationId }: { locationId: string }) {
             throw new Error(`Could not match these ingredients in inventory: ${unmatched.join(', ')}`);
           }
 
-          await addDoc(collection(db, 'recipes'), {
-            name: finishedGood.name,
-            finishedGoodId: finishedGood.id,
-            finishedGoodName: finishedGood.name,
-            locationId: locationId === 'all' ? undefined : locationId,
-            ingredients: recipeIngredients,
-          });
+          await addDoc(collection(db, 'recipes'), buildRecipePayload(finishedGood, recipeIngredients, locationId));
 
           setStatus({ type: 'success', msg: `Imported recipe for ${finishedGood.name} with ${recipeIngredients.length} ingredient lines.` });
         } catch (error) {
