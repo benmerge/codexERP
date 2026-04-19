@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { crmService, type CRMOrder } from '../services/crmService';
 import { type Ingredient, type Recipe } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { normalizeIngredient } from '../lib/inventoryCategories';
 
 interface BatchLog {
   id: string;
@@ -27,8 +28,10 @@ export function Dashboard({ locationId }: { locationId: string }) {
   useEffect(() => {
     if (!locationId) return;
 
+    // Inventory listener
     const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
+      items = items.map(normalizeIngredient);
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
         items.forEach((item) => {
@@ -50,6 +53,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
       handleFirestoreError(err, OperationType.LIST, 'inventory');
     });
 
+    // Recipes listener (for most used ingredient calculation)
     const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Recipe[];
       items = items.filter((i) =>
@@ -60,6 +64,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
       setRecipes(items);
     });
 
+    // Logs listener for usage metrics
     const unsubLogs = onSnapshot(query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(150)), (snapshot) => {
       let logItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
       logItems = logItems.filter((l) =>
@@ -67,9 +72,11 @@ export function Dashboard({ locationId }: { locationId: string }) {
           ? true
           : l.locationId === locationId || (!l.locationId && locationId === 'default')
       );
+      // enforce manual slice to 50 max
       setLogs(logItems.slice(0, 50));
     });
 
+    // CRM Orders listener
     setSyncingOrders(true);
     const unsubOrders = crmService.subscribeToOpenOrders((newOrders) => {
       setOrders(newOrders);
@@ -95,13 +102,16 @@ export function Dashboard({ locationId }: { locationId: string }) {
     }
   };
 
+  // 1. Low Inventory Alerts (below 20kg for Majors, 5kg for Minors)
   const lowStockItems = inventory.filter(i => 
     (i.category === 'Major Ingredient' && i.quantityOnHand < 20) || 
     (i.category === 'Minor Ingredient' && i.quantityOnHand < 5)
   );
 
+  // 2. Finished Goods On Hand
   const finishedGoods = inventory.filter(i => i.category === 'Finished Good');
 
+  // 3. Simple most used ingredients calculation based on recent logs
   const usageMap: Record<string, number> = {};
   logs.forEach(log => {
     const recipe = recipes.find(r => r.name === log.recipeName);
@@ -133,6 +143,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
 
   return (
     <div className="w-full space-y-8 animate-in fade-in duration-500">
+      {/* Header */}
       <div className="flex flex-col gap-4 rounded-[2rem] border border-white/70 bg-white/70 px-6 py-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.32)] backdrop-blur xl:flex-row xl:items-end xl:justify-between">
         <div>
           <div className="mrp-panel-label">Today&apos;s Control Board</div>
@@ -167,6 +178,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Open CRM Orders */}
         <div ref={queueRef} className="lg:col-span-8 space-y-6">
           <div className="flex items-center justify-between px-1">
             <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
@@ -222,7 +234,10 @@ export function Dashboard({ locationId }: { locationId: string }) {
           </div>
         </div>
 
+        {/* Inventory Side Rail */}
         <div className="lg:col-span-4 space-y-6">
+          
+          {/* Inventory Alerts */}
           <section ref={alertsRef} className="technical-card overflow-hidden">
             <div className="p-4 border-b border-zinc-100 bg-zinc-50/50">
               <h3 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
@@ -247,6 +262,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
             </div>
           </section>
 
+          {/* Product Stock */}
           <section className="technical-card overflow-hidden">
             <div className="p-4 border-b border-zinc-100 bg-zinc-50/50">
               <h3 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
@@ -270,6 +286,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
             </div>
           </section>
 
+          {/* Usage Trends */}
           <section className="bg-zinc-900 rounded-lg p-8 text-white shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-8 border-b border-zinc-800 pb-3">
               <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Velocity Metrics</h3>
