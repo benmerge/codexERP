@@ -269,7 +269,7 @@ export function Recipes({ locationId }: { locationId: string }) {
   };
 
   const matchFinishedGood = (fileName: string): Ingredient | undefined => {
-    return pickBestMatch(finishedGoods, fileName, 0.34);
+    return pickBestMatch<Ingredient>(finishedGoods, fileName, 0.34);
   };
 
   const matchIngredient = (rawName: string): Ingredient | undefined => {
@@ -283,7 +283,7 @@ export function Recipes({ locationId }: { locationId: string }) {
       .filter(Boolean);
 
     for (const candidate of candidates) {
-      const exactish = pickBestMatch(sourceIngredients, candidate, 0.5);
+      const exactish = pickBestMatch<Ingredient>(sourceIngredients, candidate, 0.5);
       if (exactish) return exactish;
     }
 
@@ -446,7 +446,7 @@ export function Recipes({ locationId }: { locationId: string }) {
             const unmatchedMessages: string[] = [];
 
             for (const [finishedGoodLabel, recipeRows] of groupedRows.entries()) {
-              const finishedGood = pickBestMatch(finishedGoods, finishedGoodLabel, 0.45);
+              const finishedGood = pickBestMatch<Ingredient>(finishedGoods, finishedGoodLabel, 0.45);
               if (!finishedGood) {
                 unmatchedMessages.push(`Missing finished good: ${finishedGoodLabel}`);
                 continue;
