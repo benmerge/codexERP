@@ -1,0 +1,248 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'user')
+    //
+    // Collection: /users/{userId}/customers/{customerId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - company: string (required)
+    //   - email: string (optional)
+    //   - phone: string (optional)
+    //   - isProspect: boolean (required)
+    //   - category: string (required, enum)
+    //   - pipelineStage: string (required, enum)
+    //   - lastContact: string (optional)
+    //   - notes: list of objects (optional)
+    //   - uid: string (required)
+    //
+    // Collection: /users/{userId}/tasks/{taskId}
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required)
+    //   - description: string (required)
+    //   - status: string (required, enum)
+    //   - customerId: string (optional)
+    //   - dueDate: string (optional)
+    //   - uid: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && (
+        request.auth.uid == userId || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgId == userId)
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "ben@mergeimpact.com" && request.auth.token.email_verified == true));
+    }
+
+    function uidUnchanged(userId) {
+      return !('uid' in request.resource.data) || request.resource.data.uid == userId;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function isSharedOpsUser() {
+      return isAuthenticated() &&
+             request.auth.token.email != null &&
+             request.auth.token.email_verified == true &&
+             (
+               request.auth.token.email.matches('.*@40centurygrain\\.com$') ||
+               request.auth.token.email.matches('.*@40centurygrain\\.earth$') ||
+               request.auth.token.email.matches('.*@mergeimpact\\.com$')
+             );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasOnly(['email', 'displayName', 'role', 'clientLogo', 'orgId']) &&
+             (!('email' in data) || (data.email is string && isValidEmail(data.email))) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('role' in data) || (data.role in ['admin', 'user'])) &&
+             (!('clientLogo' in data) || data.clientLogo is string && data.clientLogo.size() < 1000000) &&
+             (!('orgId' in data) || data.orgId is string);
+    }
+
+    function isValidNote(note) {
+      return note is map &&
+             note.keys().hasOnly(['id', 'text', 'date']) &&
+             note.id is string && note.id.size() < 100 &&
+             note.text is string && note.text.size() < 5000 &&
+             note.date is string && note.date.size() < 50;
+    }
+
+    function areValidNotes(notes) {
+      return notes is list && notes.size() < 1000; // Need to check each note ideally, but list size limit is a start
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAny(['id', 'name', 'company', 'isProspect', 'category', 'pipelineStage', 'uid']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.company is string && data.company.size() > 0 && data.company.size() < 200 &&
+             (!('email' in data) || data.email == '' || (data.email is string && data.email.size() < 200)) &&
+             (!('phone' in data) || data.phone == '' || (data.phone is string && data.phone.size() < 50)) &&
+             (!('salesRepId' in data) || data.salesRepId is string && data.salesRepId.size() < 100) &&
+             (!('salesRepName' in data) || data.salesRepName is string && data.salesRepName.size() < 200) &&
+             (!('salesRepEmail' in data) || data.salesRepEmail == '' || (data.salesRepEmail is string && data.salesRepEmail.size() < 200)) &&
+             data.isProspect is bool &&
+             data.category in ['Retail', 'Wholesale', 'Distributor', 'Partner'] &&
+             data.pipelineStage in ['Lead', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'] &&
+             (!('lastContact' in data) || data.lastContact == '' || (data.lastContact is string && data.lastContact.size() < 50)) &&
+             (!('notes' in data) || areValidNotes(data.notes)) &&
+             (!('monthlySalesVolume' in data) || data.monthlySalesVolume is number && data.monthlySalesVolume >= 0) &&
+             data.uid is string && data.uid.size() < 100;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAny(['id', 'title', 'description', 'status', 'uid']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.description is string && data.description.size() < 5000 &&
+             data.status in ['To Do', 'In Progress', 'Review', 'Done'] &&
+             (!('customerId' in data) || data.customerId == '' || (data.customerId is string && data.customerId.size() < 100)) &&
+             (!('dueDate' in data) || data.dueDate == '' || (data.dueDate is string && data.dueDate.size() < 50)) &&
+             data.uid is string && data.uid.size() < 100;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAny(['id', 'customerId', 'date', 'status', 'items', 'uid']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.customerId is string && data.customerId.size() < 100 &&
+             data.date is string && data.date.size() < 50 &&
+             data.status in ['Order placed', 'Shipped', 'Delivered', 'Cancelled'] &&
+             data.items is list && data.items.size() < 100 &&
+             (!('amount' in data) || data.amount is number && data.amount >= 0) &&
+             (!('source' in data) || data.source is string && data.source.size() < 100) &&
+             (!('fulfilledDate' in data) || data.fulfilledDate is string && data.fulfilledDate.size() < 50) &&
+             data.uid is string && data.uid.size() < 100;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAny(['id', 'name', 'category', 'sku', 'stock', 'unit', 'price', 'uid']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.category is string && data.category.size() < 100 &&
+             data.sku is string && data.sku.size() < 100 &&
+             data.stock is number &&
+             data.unit is string && data.unit.size() < 50 &&
+             data.price is number && data.price >= 0 &&
+             (!('supplierId' in data) || data.supplierId is string && data.supplierId.size() < 100) &&
+             (!('status' in data) || data.status in ['In Stock', 'Low Stock', 'Out of Stock']) &&
+             data.uid is string && data.uid.size() < 100;
+    }
+
+    function isValidSupplier(data) {
+      return data.keys().hasAny(['id', 'name', 'uid']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             (!('contactName' in data) || data.contactName is string && data.contactName.size() < 200) &&
+             (!('email' in data) || (data.email is string && isValidEmail(data.email) || data.email == '')) &&
+             (!('phone' in data) || data.phone is string && data.phone.size() < 50) &&
+             (!('category' in data) || data.category is string && data.category.size() < 100) &&
+             (!('rating' in data) || data.rating is number && data.rating >= 0 && data.rating <= 5) &&
+             data.uid is string && data.uid.size() < 100;
+    }
+
+    function isValidTeamMember(data) {
+      return data.keys().hasOnly(['email', 'displayName', 'orgId', 'role']) &&
+             data.email is string &&
+             isValidEmail(data.email) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('orgId' in data) || data.orgId is string) &&
+             (!('role' in data) || data.role in ['admin', 'user']);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /{path=**}/orders/{orderId} {
+      allow read: if isSharedOpsUser();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin()) && (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin()) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+
+      match /customers/{customerId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidCustomer(request.resource.data) && uidUnchanged(userId);
+        allow update: if isOwner(userId) && isValidCustomer(request.resource.data) && uidNotModified();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidTask(request.resource.data) && uidUnchanged(userId);
+        allow update: if isOwner(userId) && isValidTask(request.resource.data) && uidNotModified();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /orders/{orderId} {
+        allow read: if isOwner(userId) || isAdmin() || isSharedOpsUser();
+        allow create: if isOwner(userId) && isValidOrder(request.resource.data) && uidUnchanged(userId);
+        allow update: if (isOwner(userId) && isValidOrder(request.resource.data) && uidNotModified()) || 
+                         (isSharedOpsUser() && 
+                          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'fulfilledDate']) &&
+                          request.resource.data.status in ['Shipped', 'Delivered']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /products/{productId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidProduct(request.resource.data) && uidUnchanged(userId);
+        allow update: if isOwner(userId) && isValidProduct(request.resource.data) && uidNotModified();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /suppliers/{supplierId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidSupplier(request.resource.data) && uidUnchanged(userId);
+        allow update: if isOwner(userId) && isValidSupplier(request.resource.data) && uidNotModified();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /team/{memberId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidTeamMember(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+  }
+}
