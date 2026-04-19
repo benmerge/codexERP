@@ -8,6 +8,11 @@ import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 
 const CATEGORY_ORDER: Array<Ingredient['category']> = ['Finished Good', 'Major Ingredient', 'Minor Ingredient'];
 const MEASURE_UNITS: RecipeMeasureUnit[] = ['g', 'kg', 'ml'];
+const FORMULA_LINE_CATEGORIES: Array<Ingredient['category']> = ['Major Ingredient', 'Minor Ingredient', 'Finished Good'];
+
+interface DraftRecipeIngredient extends RecipeIngredient {
+  ingredientCategory: Ingredient['category'];
+}
 
 const normalizeLabel = (value: string) =>
   value
@@ -24,7 +29,7 @@ export function Recipes({ locationId }: { locationId: string }) {
   const [isDrafting, setIsDrafting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [draftFinishedGoodId, setDraftFinishedGoodId] = useState('');
-  const [draftIngredients, setDraftIngredients] = useState<RecipeIngredient[]>([]);
+  const [draftIngredients, setDraftIngredients] = useState<DraftRecipeIngredient[]>([]);
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,29 +86,34 @@ export function Recipes({ locationId }: { locationId: string }) {
   const finishedGoods = inventory.filter((item) => item.category === 'Finished Good');
   const sourceIngredients = inventory.filter((item) => item.category !== 'Finished Good');
 
-  const groupedIngredients = CATEGORY_ORDER
-    .filter((category) => category !== 'Finished Good')
-    .map((category) => ({
-      category,
-      items: sourceIngredients.filter((item) => item.category === category),
-    }))
-    .filter((group) => group.items.length > 0);
-
-  const addIngredientToDraft = (ingredientId: string) => {
-    if (draftIngredients.find((ri) => ri.ingredientId === ingredientId)) return;
-    const ingredient = sourceIngredients.find((item) => item.id === ingredientId);
-    setDraftIngredients([...draftIngredients, { ingredientId, ingredientName: ingredient?.name, amount: 0, unit: 'g' }]);
+  const addDraftLine = (category: Ingredient['category'] = 'Major Ingredient') => {
+    setDraftIngredients((current) => [
+      ...current,
+      {
+        ingredientId: '',
+        ingredientName: '',
+        ingredientCategory: category,
+        amount: 0,
+        unit: 'g',
+      },
+    ]);
   };
 
-  const removeIngredientFromDraft = (ingredientId: string) => {
-    setDraftIngredients(draftIngredients.filter((ri) => ri.ingredientId !== ingredientId));
+  const removeDraftLine = (index: number) => {
+    setDraftIngredients((current) => current.filter((_, currentIndex) => currentIndex !== index));
   };
 
-  const updateDraftIngredient = (ingredientId: string, updates: Partial<RecipeIngredient>) => {
-    setDraftIngredients(
-      draftIngredients.map((ri) =>
-        ri.ingredientId === ingredientId ? { ...ri, ...updates } : ri
-      )
+  const updateDraftIngredient = (index: number, updates: Partial<DraftRecipeIngredient>) => {
+    setDraftIngredients((current) =>
+      current.map((line, currentIndex) => {
+        if (currentIndex !== index) return line;
+        const nextLine = { ...line, ...updates };
+        if (updates.ingredientCategory && updates.ingredientCategory !== line.ingredientCategory) {
+          nextLine.ingredientId = '';
+          nextLine.ingredientName = '';
+        }
+        return nextLine;
+      })
     );
   };
 
@@ -111,6 +121,22 @@ export function Recipes({ locationId }: { locationId: string }) {
     setIsDrafting(false);
     setDraftFinishedGoodId('');
     setDraftIngredients([]);
+  };
+
+  const beginDraft = () => {
+    setStatus(null);
+    setIsDrafting(true);
+    if (draftIngredients.length === 0) {
+      setDraftIngredients([
+        {
+          ingredientId: '',
+          ingredientName: '',
+          ingredientCategory: 'Major Ingredient',
+          amount: 0,
+          unit: 'g',
+        },
+      ]);
+    }
   };
 
   const matchFinishedGood = (fileName: string) => {
@@ -146,9 +172,27 @@ export function Recipes({ locationId }: { locationId: string }) {
 
   const handleSaveRecipe = async () => {
     const finishedGood = inventory.find((item) => item.id === draftFinishedGoodId && item.category === 'Finished Good');
-    const normalizedIngredients = draftIngredients.filter((ingredient) => ingredient.amount > 0);
+    if (!finishedGood) {
+      setStatus({ type: 'error', msg: 'Choose a finished good before saving the formula.' });
+      return;
+    }
 
-    if (!finishedGood || normalizedIngredients.length === 0) return;
+    const normalizedIngredients = draftIngredients
+      .filter((ingredient) => ingredient.ingredientId && ingredient.amount > 0)
+      .map((ingredient) => ({
+        ingredientId: ingredient.ingredientId,
+        ingredientName:
+          inventory.find((item) => item.id === ingredient.ingredientId)?.name ||
+          ingredient.ingredientName ||
+          'Unknown',
+        amount: ingredient.amount,
+        unit: ingredient.unit,
+      }));
+
+    if (normalizedIngredients.length === 0) {
+      setStatus({ type: 'error', msg: 'Add at least one ingredient line with an amount greater than zero.' });
+      return;
+    }
 
     try {
       await addDoc(collection(db, 'recipes'), {
@@ -156,15 +200,13 @@ export function Recipes({ locationId }: { locationId: string }) {
         finishedGoodId: locationId === 'all' ? undefined : finishedGood.id,
         finishedGoodName: finishedGood.name,
         locationId: locationId === 'all' ? undefined : locationId,
-        ingredients: normalizedIngredients.map((ingredient) => ({
-          ...ingredient,
-          ingredientName: inventory.find((item) => item.id === ingredient.ingredientId)?.name || ingredient.ingredientName || 'Unknown',
-        })),
+        ingredients: normalizedIngredients,
       });
       setStatus({ type: 'success', msg: `Saved formula for ${finishedGood.name}.` });
       resetDraft();
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'recipes');
+      setStatus({ type: 'error', msg: 'Failed to save formula.' });
     }
   };
 
@@ -283,7 +325,7 @@ export function Recipes({ locationId }: { locationId: string }) {
           </button>
           {!isDrafting && (
             <button
-              onClick={() => setIsDrafting(true)}
+              onClick={beginDraft}
               className="px-6 py-2.5 bg-zinc-900 text-white rounded text-[12px] font-bold flex items-center gap-2 hover:bg-black transition-colors"
             >
               <Plus className="h-4 w-4 text-accent" />
@@ -348,31 +390,30 @@ export function Recipes({ locationId }: { locationId: string }) {
           <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-8">
             <div className="space-y-4">
               <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                <Beaker className="h-4 w-4" /> Ingredient Library
+                <Beaker className="h-4 w-4" /> Formula Setup
               </h4>
-              <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                {groupedIngredients.map((group) => (
-                  <div key={group.category} className="rounded-2xl border border-zinc-100 bg-white/70 p-4">
-                    <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-zinc-400">
-                      {group.category}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {group.items.map((item) => (
-                        <button
-                          key={item.id}
-                          onClick={() => addIngredientToDraft(item.id)}
-                          className="flex justify-between items-center p-3 rounded-xl border border-zinc-200 bg-white hover:border-accent hover:bg-zinc-50 transition-all text-left"
-                        >
-                          <div className="flex flex-col truncate">
-                            <span className="text-[13px] font-medium text-zinc-700 truncate">{item.name}</span>
-                            <span className="text-[9px] font-bold text-zinc-400 uppercase">{item.unit}</span>
-                          </div>
-                          <Plus className="h-3.5 w-3.5 text-zinc-300 shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div className="rounded-2xl border border-zinc-100 bg-white/70 p-4 space-y-4">
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 px-4 py-3 text-[13px] text-zinc-600">
+                  Choose the finished good first, then add recipe lines with category, ingredient, amount, and unit.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {FORMULA_LINE_CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => addDraftLine(category)}
+                      className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-600 hover:bg-zinc-50"
+                    >
+                      <Plus className="mr-2 inline h-3 w-3" />
+                      {category}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[11px] text-zinc-500">
+                  {finishedGoods.length === 0
+                    ? 'Add a Finished Good in Inventory Master before creating a formula.'
+                    : `${finishedGoods.length} finished good${finishedGoods.length === 1 ? '' : 's'} available.`}
+                </div>
               </div>
             </div>
 
@@ -381,42 +422,75 @@ export function Recipes({ locationId }: { locationId: string }) {
               <div className="space-y-3 min-h-[140px] bg-white/50 p-4 rounded-2xl border border-zinc-100">
                 {draftIngredients.length === 0 ? (
                   <p className="text-zinc-400 text-sm italic py-16 text-center border-2 border-dashed border-zinc-100 rounded-xl">
-                    Add ingredients from the library, then set the volume and measure for each line.
+                    Add a formula line, choose its category, then select the ingredient and amount.
                   </p>
                 ) : (
-                  draftIngredients.map((ri) => (
-                    <div key={ri.ingredientId} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-4 md:grid-cols-[1.2fr_0.55fr_0.4fr_auto] md:items-center">
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-zinc-800 truncate">{getIngredientName(ri.ingredientId, ri.ingredientName)}</div>
-                        <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1">{getIngredientCategory(ri.ingredientId)}</div>
+                  draftIngredients.map((ri, index) => {
+                    const categoryInventory = inventory.filter((item) => item.category === ri.ingredientCategory);
+                    return (
+                      <div key={`${ri.ingredientId || 'draft'}-${index}`} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-4 md:grid-cols-[0.8fr_1.2fr_0.5fr_0.35fr_auto] md:items-center">
+                        <select
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
+                          value={ri.ingredientCategory}
+                          onChange={(e) => updateDraftIngredient(index, { ingredientCategory: e.target.value as Ingredient['category'] })}
+                        >
+                          {FORMULA_LINE_CATEGORIES.map((category) => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="min-w-0">
+                          <select
+                            className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
+                            value={ri.ingredientId}
+                            onChange={(e) => {
+                              const ingredient = inventory.find((item) => item.id === e.target.value);
+                              updateDraftIngredient(index, {
+                                ingredientId: e.target.value,
+                                ingredientName: ingredient?.name || '',
+                              });
+                            }}
+                          >
+                            <option value="">Select ingredient...</option>
+                            {categoryInventory.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1">
+                            {ri.ingredientId ? getIngredientCategory(ri.ingredientId) : ri.ingredientCategory}
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.001"
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-right font-mono text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
+                          value={ri.amount === 0 ? '' : ri.amount}
+                          onChange={(e) => updateDraftIngredient(index, { amount: parseFloat(e.target.value) || 0 })}
+                          placeholder="0"
+                        />
+                        <select
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
+                          value={ri.unit}
+                          onChange={(e) => updateDraftIngredient(index, { unit: e.target.value as RecipeMeasureUnit })}
+                        >
+                          {MEASURE_UNITS.map((unit) => (
+                            <option key={unit} value={unit}>
+                              {unit}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => removeDraftLine(index)}
+                          className="p-2 text-zinc-300 hover:text-red-500 rounded transition-colors justify-self-end"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                      <input
-                        type="number"
-                        step="0.001"
-                        className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-right font-mono text-[13px] font-bold focus:outline-none focus:ring-1 focus:ring-accent"
-                        value={ri.amount === 0 ? '' : ri.amount}
-                        onChange={(e) => updateDraftIngredient(ri.ingredientId, { amount: parseFloat(e.target.value) || 0 })}
-                        placeholder="0"
-                      />
-                      <select
-                        className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
-                        value={ri.unit}
-                        onChange={(e) => updateDraftIngredient(ri.ingredientId, { unit: e.target.value as RecipeMeasureUnit })}
-                      >
-                        {MEASURE_UNITS.map((unit) => (
-                          <option key={unit} value={unit}>
-                            {unit}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => removeIngredientFromDraft(ri.ingredientId)}
-                        className="p-2 text-zinc-300 hover:text-red-500 rounded transition-colors justify-self-end"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
