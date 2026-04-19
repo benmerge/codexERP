@@ -5,23 +5,14 @@ import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload, Pencil } fr
 import { collection, onSnapshot, query, addDoc, deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { normalizeIngredient } from '../lib/inventoryCategories';
+import { CATEGORY_ORDER, INGREDIENT_CATEGORIES, normalizeIngredient } from '../lib/inventoryCategories';
 
-const CATEGORY_ORDER: Array<Ingredient['category']> = ['Finished Good', 'Major Ingredient', 'Minor Ingredient'];
 const MEASURE_UNITS: RecipeMeasureUnit[] = ['g', 'kg', 'ml'];
-const FORMULA_LINE_CATEGORIES: Array<Ingredient['category']> = ['Major Ingredient', 'Minor Ingredient', 'Finished Good'];
+const FORMULA_LINE_CATEGORIES: Array<Ingredient['category']> = INGREDIENT_CATEGORIES;
 
 interface DraftRecipeIngredient extends RecipeIngredient {
   ingredientCategory: Ingredient['category'];
 }
-
-type ParsedRecipeRow = {
-  finishedGoodName: string;
-  ingredientName: string;
-  ingredientCategory?: string;
-  amount: number;
-  unit: RecipeMeasureUnit;
-};
 
 const normalizeLabel = (value: string) =>
   value
@@ -45,6 +36,14 @@ const scoreMatch = (left: string, right: string) => {
   const rightSet = new Set(rightTokens);
   const overlap = leftTokens.filter((token) => rightSet.has(token)).length;
   return overlap / Math.max(leftTokens.length, rightTokens.length);
+};
+
+type ParsedRecipeRow = {
+  finishedGoodName: string;
+  ingredientName: string;
+  ingredientCategory?: string;
+  amount: number;
+  unit: RecipeMeasureUnit;
 };
 
 const pickBestMatch = <T extends { name: string }>(
@@ -303,11 +302,7 @@ export function Recipes({ locationId }: { locationId: string }) {
       } as const;
     }
 
-    if (
-      row.ingredientCategory &&
-      ingredient.category !== row.ingredientCategory &&
-      row.ingredientCategory !== 'Finished Good'
-    ) {
+    if (row.ingredientCategory && ingredient.category !== row.ingredientCategory) {
       return {
         error: `${row.ingredientName} (expected ${row.ingredientCategory}, found ${ingredient.category})`,
       } as const;
