@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, FileText, ShoppingBag } from 'lucide-react';
+import { Search, Plus, FileText } from 'lucide-react';
 import { CreateOrderDialog } from '../components/CreateOrderDialog';
 import { ViewOrderDialog } from '../components/ViewOrderDialog';
 import { Order } from '../types';
@@ -131,9 +131,8 @@ export const Sales = () => {
                             {order.items?.slice(0, 3).map((item, idx) => {
                               const product = products.find(p => p.id === item.productId);
                               return (
-                                <div key={idx} className="text-xs flex justify-between gap-2 overflow-hidden items-center">
-                                  <span className="truncate text-slate-500">{product?.name || item.productId}</span>
-                                  <span className="text-[10px] font-mono bg-slate-100 px-1 rounded text-slate-600">x{item.quantity}</span>
+                                <div key={idx} className="text-xs overflow-hidden">
+                                  <span className="truncate text-slate-500 block">{product?.name || item.productId}</span>
                                 </div>
                               );
                             })}
