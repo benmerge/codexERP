@@ -5,6 +5,7 @@ import { collection, onSnapshot, query, setDoc, doc, writeBatch, deleteDoc, getD
 import { db } from '../firebase';
 import { type Ingredient } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { normalizeInventoryCategory, normalizeIngredient } from '../lib/inventoryCategories';
 import { v4 as uuidv4 } from 'uuid';
 import { Edit2, Check, X } from 'lucide-react';
 
@@ -23,6 +24,8 @@ export function Inventory({ locationId }: { locationId: string }) {
         id: doc.id,
         ...doc.data()
       })) as Ingredient[];
+
+      items = items.map(normalizeIngredient);
 
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
@@ -106,6 +109,7 @@ export function Inventory({ locationId }: { locationId: string }) {
     } catch (err) {
       console.error(err);
       setStatus({ type: 'error', msg: 'Failed to clear inventory. Permission denied or system error.' });
+      // Still call for log purposes
       try { handleFirestoreError(err, OperationType.DELETE, 'inventory/all'); } catch(e) {}
     } finally {
       setIsUploading(false);
@@ -130,15 +134,18 @@ export function Inventory({ locationId }: { locationId: string }) {
         const batch = writeBatch(db);
         let count = 0;
         
+        // Define potential header aliases
         const idKeys = ['product id', 'id', 'sku', 'code', 'part number'];
         const nameKeys = ['name', 'ingredient', 'item', 'description', 'component'];
         const qtyKeys = ['on hand', 'quantityonhand', 'qty', 'amount', 'stock', 'onhand', 'quantity'];
         const unitKeys = ['category', 'unit', 'uom', 'measure', 'type'];
 
         results.data.forEach((row: any) => {
+          // Normalize row keys
           const normalizedRow: any = {};
           Object.keys(row).forEach(k => normalizedRow[k.toLowerCase().trim()] = row[k]);
 
+          // Find matches by checking for key existence in the normalized map
           const matchedKeys: any = {};
           ['id', 'name', 'qty', 'unit'].forEach(type => {
             const aliases = 
@@ -151,6 +158,7 @@ export function Inventory({ locationId }: { locationId: string }) {
             if (found) matchedKeys[type] = found;
           });
 
+          // Extract values strictly
           const nameValue = (matchedKeys.name ? normalizedRow[matchedKeys.name] : null) || row.Name || row.name || row.Item || '';
           const name = String(nameValue).trim();
           
@@ -168,20 +176,10 @@ export function Inventory({ locationId }: { locationId: string }) {
             (matchedKeys.unit ? normalizedRow[matchedKeys.unit] : null) || 
             row.Category || row.unit || row.type || row.Type || 'Major';
 
-          const categoryMapping = (cat: string, itemName: string): 'Major Ingredient' | 'Minor Ingredient' | 'Finished Good' => {
-            const lowCat = String(cat).toLowerCase();
-            const lowName = String(itemName).toLowerCase();
-            
-            if (lowCat.includes('finished') || lowCat.includes('good') || lowCat.includes('product')) return 'Finished Good';
-            if (lowName.includes('mix') || lowName.includes('granola')) return 'Finished Good';
-            
-            if (lowCat.includes('minor')) return 'Minor Ingredient';
-            return 'Major Ingredient';
-          };
-
-          const category = categoryMapping(String(rawUnit), name);
+          const category = normalizeInventoryCategory(String(rawUnit), name);
           const unitLabel = category === 'Finished Good' ? 'units' : 'kg';
 
+          // Clean up quantity: handle "6.0", "1,200", "$10.50", etc.
           const cleanQtyStr = String(rawQty).replace(/[^0-9.-]/g, '');
           const qty = parseFloat(cleanQtyStr);
           const finalQty = isNaN(qty) ? 0 : qty;
@@ -237,7 +235,7 @@ export function Inventory({ locationId }: { locationId: string }) {
       await setDoc(docRef, {
         id: docRef.id,
         name: newItem.name.trim(),
-        category: newItem.category,
+        category: normalizeInventoryCategory(newItem.category, newItem.name.trim()),
         unit: newItem.unit,
         locationId,
         quantityOnHand: parseFloat(newItem.qty) || 0,
@@ -457,7 +455,7 @@ export function Inventory({ locationId }: { locationId: string }) {
                           item.category === 'Minor Ingredient' ? 'bg-amber-50 border-amber-100 text-amber-600' :
                           'bg-emerald-50 border-emerald-100 text-emerald-600'
                         }`}>
-                          {item.category?.toUpperCase() || 'GENERAL'}
+                          {item.category.toUpperCase()}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
