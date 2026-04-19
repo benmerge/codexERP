@@ -1,12 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Papa from 'papaparse';
 import { type Recipe, type Ingredient, type RecipeIngredient, type RecipeMeasureUnit } from '../types';
-import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2 } from 'lucide-react';
+import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload } from 'lucide-react';
 import { collection, onSnapshot, query, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 
 const CATEGORY_ORDER: Array<Ingredient['category']> = ['Finished Good', 'Major Ingredient', 'Minor Ingredient'];
 const MEASURE_UNITS: RecipeMeasureUnit[] = ['g', 'kg', 'ml'];
+
+const normalizeLabel = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/recipes?\s*-\s*/g, '')
+    .replace(/\.csv$/g, '')
+    .replace(/[®™]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 export function Recipes({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -15,6 +25,9 @@ export function Recipes({ locationId }: { locationId: string }) {
   const [loading, setLoading] = useState(true);
   const [draftFinishedGoodId, setDraftFinishedGoodId] = useState('');
   const [draftIngredients, setDraftIngredients] = useState<RecipeIngredient[]>([]);
+  const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!locationId) return;
@@ -22,7 +35,18 @@ export function Recipes({ locationId }: { locationId: string }) {
     const qInv = query(collection(db, 'inventory'));
     const unsubInv = onSnapshot(qInv, (snapshot) => {
       let items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Ingredient[];
-      items = items.filter((i) => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      if (locationId === 'all') {
+        const grouped = new Map<string, Ingredient>();
+        items.forEach((item) => {
+          const key = `${item.name}__${item.category}__${item.unit}`;
+          if (!grouped.has(key)) {
+            grouped.set(key, { ...item, id: key, locationId: 'all' });
+          }
+        });
+        items = Array.from(grouped.values());
+      } else {
+        items = items.filter((i) => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      }
       items.sort((a, b) => {
         const categoryRank = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category);
         if (categoryRank !== 0) return categoryRank;
@@ -36,7 +60,11 @@ export function Recipes({ locationId }: { locationId: string }) {
     const qRec = query(collection(db, 'recipes'));
     const unsubRec = onSnapshot(qRec, (snapshot) => {
       let items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Recipe[];
-      items = items.filter((i) => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      items = items.filter((i) =>
+        locationId === 'all'
+          ? true
+          : i.locationId === locationId || !i.locationId || (!i.locationId && locationId === 'default')
+      );
       setRecipes(items);
       setLoading(false);
     }, (err) => {
@@ -63,7 +91,8 @@ export function Recipes({ locationId }: { locationId: string }) {
 
   const addIngredientToDraft = (ingredientId: string) => {
     if (draftIngredients.find((ri) => ri.ingredientId === ingredientId)) return;
-    setDraftIngredients([...draftIngredients, { ingredientId, amount: 0, unit: 'g' }]);
+    const ingredient = sourceIngredients.find((item) => item.id === ingredientId);
+    setDraftIngredients([...draftIngredients, { ingredientId, ingredientName: ingredient?.name, amount: 0, unit: 'g' }]);
   };
 
   const removeIngredientFromDraft = (ingredientId: string) => {
@@ -84,6 +113,37 @@ export function Recipes({ locationId }: { locationId: string }) {
     setDraftIngredients([]);
   };
 
+  const matchFinishedGood = (fileName: string) => {
+    const normalizedFileName = normalizeLabel(fileName);
+    return finishedGoods.find((item) => {
+      const normalizedItemName = normalizeLabel(item.name);
+      return (
+        normalizedItemName === normalizedFileName ||
+        normalizedItemName.includes(normalizedFileName) ||
+        normalizedFileName.includes(normalizedItemName)
+      );
+    });
+  };
+
+  const matchIngredient = (rawName: string) => {
+    const candidates = [
+      rawName,
+      rawName.split(',')[0],
+      rawName.replace(/\s+-\s+.*/, ''),
+    ]
+      .map((candidate) => normalizeLabel(candidate))
+      .filter(Boolean);
+
+    return sourceIngredients.find((item) => {
+      const normalizedItemName = normalizeLabel(item.name);
+      return candidates.some((candidate) =>
+        normalizedItemName === candidate ||
+        normalizedItemName.includes(candidate) ||
+        candidate.includes(normalizedItemName)
+      );
+    });
+  };
+
   const handleSaveRecipe = async () => {
     const finishedGood = inventory.find((item) => item.id === draftFinishedGoodId && item.category === 'Finished Good');
     const normalizedIngredients = draftIngredients.filter((ingredient) => ingredient.amount > 0);
@@ -93,15 +153,93 @@ export function Recipes({ locationId }: { locationId: string }) {
     try {
       await addDoc(collection(db, 'recipes'), {
         name: finishedGood.name,
-        finishedGoodId: finishedGood.id,
+        finishedGoodId: locationId === 'all' ? undefined : finishedGood.id,
         finishedGoodName: finishedGood.name,
-        locationId,
-        ingredients: normalizedIngredients,
+        locationId: locationId === 'all' ? undefined : locationId,
+        ingredients: normalizedIngredients.map((ingredient) => ({
+          ...ingredient,
+          ingredientName: inventory.find((item) => item.id === ingredient.ingredientId)?.name || ingredient.ingredientName || 'Unknown',
+        })),
       });
+      setStatus({ type: 'success', msg: `Saved formula for ${finishedGood.name}.` });
       resetDraft();
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'recipes');
     }
+  };
+
+  const handleRecipeUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setStatus(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const finishedGood = matchFinishedGood(file.name);
+          if (!finishedGood) {
+            throw new Error(`Could not match a finished good from "${file.name}". Add that finished good to Inventory Master first.`);
+          }
+
+          const parsedIngredients = (results.data as Record<string, string>[])
+            .map((row) => {
+              const ingredientName = (row['Ingredients'] || row['Ingredient'] || row['name'] || '').trim();
+              const gramsPerPackage = parseFloat(String(row['g per package'] || row['grams per package'] || row['Amount'] || '').trim());
+              return { ingredientName, gramsPerPackage };
+            })
+            .filter((row) => row.ingredientName && row.ingredientName.toLowerCase() !== 'total' && !Number.isNaN(row.gramsPerPackage));
+
+          const unmatched: string[] = [];
+          const recipeIngredients: RecipeIngredient[] = [];
+
+          parsedIngredients.forEach((row) => {
+            const ingredient = matchIngredient(row.ingredientName);
+            if (!ingredient) {
+              unmatched.push(row.ingredientName);
+              return;
+            }
+            recipeIngredients.push({
+              ingredientId: ingredient.id,
+              ingredientName: ingredient.name,
+              amount: row.gramsPerPackage,
+              unit: 'g',
+            });
+          });
+
+          if (recipeIngredients.length === 0) {
+            throw new Error('No ingredient lines were imported from the CSV.');
+          }
+
+          if (unmatched.length > 0) {
+            throw new Error(`Could not match these ingredients in inventory: ${unmatched.join(', ')}`);
+          }
+
+          await addDoc(collection(db, 'recipes'), {
+            name: finishedGood.name,
+            finishedGoodId: locationId === 'all' ? undefined : finishedGood.id,
+            finishedGoodName: finishedGood.name,
+            locationId: locationId === 'all' ? undefined : locationId,
+            ingredients: recipeIngredients,
+          });
+
+          setStatus({ type: 'success', msg: `Imported recipe for ${finishedGood.name} with ${recipeIngredients.length} ingredient lines.` });
+        } catch (error) {
+          setStatus({ type: 'error', msg: error instanceof Error ? error.message : 'Failed to import recipe CSV.' });
+        } finally {
+          setIsImporting(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      },
+      error: (error) => {
+        setIsImporting(false);
+        setStatus({ type: 'error', msg: `CSV parsing error: ${error.message}` });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
+    });
   };
 
   const handleDeleteRecipe = async (id: string | undefined) => {
@@ -113,7 +251,7 @@ export function Recipes({ locationId }: { locationId: string }) {
     }
   };
 
-  const getIngredientName = (id: string) => inventory.find((i) => i.id === id)?.name || 'Unknown';
+  const getIngredientName = (id: string, fallbackName?: string) => inventory.find((i) => i.id === id)?.name || fallbackName || 'Unknown';
   const getIngredientCategory = (id: string) => inventory.find((i) => i.id === id)?.category || 'Unknown';
   const getFinishedGoodName = (recipe: Recipe) =>
     recipe.finishedGoodName ||
@@ -127,16 +265,41 @@ export function Recipes({ locationId }: { locationId: string }) {
           <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Recipe Formulas</h2>
           <p className="text-[13px] text-zinc-500 mt-1">Tie each finished good to a real ingredient bill and measurement plan.</p>
         </div>
-        {!isDrafting && (
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".csv"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleRecipeUpload}
+          />
           <button
-            onClick={() => setIsDrafting(true)}
-            className="px-6 py-2.5 bg-zinc-900 text-white rounded text-[12px] font-bold flex items-center gap-2 hover:bg-black transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            className="px-4 py-2.5 border border-zinc-200 bg-white text-zinc-700 rounded text-[12px] font-bold flex items-center gap-2 hover:bg-zinc-50 transition-colors disabled:opacity-60"
           >
-            <Plus className="h-4 w-4 text-accent" />
-            NEW FORMULA
+            <Upload className="h-4 w-4" />
+            {isImporting ? 'IMPORTING...' : 'IMPORT RECIPE CSV'}
           </button>
-        )}
+          {!isDrafting && (
+            <button
+              onClick={() => setIsDrafting(true)}
+              className="px-6 py-2.5 bg-zinc-900 text-white rounded text-[12px] font-bold flex items-center gap-2 hover:bg-black transition-colors"
+            >
+              <Plus className="h-4 w-4 text-accent" />
+              NEW FORMULA
+            </button>
+          )}
+        </div>
       </div>
+
+      {status && (
+        <div className={`rounded-xl border px-4 py-3 text-[13px] ${
+          status.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'
+        }`}>
+          {status.msg}
+        </div>
+      )}
 
       {isDrafting && (
         <div className="technical-card p-8 bg-zinc-50/30 border-accent/20 animate-in zoom-in-95 duration-300">
@@ -224,7 +387,7 @@ export function Recipes({ locationId }: { locationId: string }) {
                   draftIngredients.map((ri) => (
                     <div key={ri.ingredientId} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-4 md:grid-cols-[1.2fr_0.55fr_0.4fr_auto] md:items-center">
                       <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-zinc-800 truncate">{getIngredientName(ri.ingredientId)}</div>
+                        <div className="text-[13px] font-bold text-zinc-800 truncate">{getIngredientName(ri.ingredientId, ri.ingredientName)}</div>
                         <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1">{getIngredientCategory(ri.ingredientId)}</div>
                       </div>
                       <input
@@ -304,7 +467,7 @@ export function Recipes({ locationId }: { locationId: string }) {
               <div className="max-h-[160px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                 {recipe.ingredients.map((ri, idx) => (
                   <div key={idx} className="flex justify-between text-[12px] py-1 border-b border-zinc-50 last:border-0 gap-3">
-                    <span className="text-zinc-600 truncate">{getIngredientName(ri.ingredientId)}</span>
+                    <span className="text-zinc-600 truncate">{getIngredientName(ri.ingredientId, ri.ingredientName)}</span>
                     <span className="font-mono font-bold text-zinc-900 shrink-0">
                       {ri.amount} <span className="text-[9px] text-zinc-400 uppercase font-sans">{ri.unit || 'g'}</span>
                     </span>
