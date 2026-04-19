@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import Papa from 'papaparse';
 import { type Recipe, type Ingredient, type RecipeIngredient, type RecipeMeasureUnit } from '../types';
 import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload, Pencil } from 'lucide-react';
@@ -14,6 +14,14 @@ const FORMULA_LINE_CATEGORIES: Array<Ingredient['category']> = ['Major Ingredien
 interface DraftRecipeIngredient extends RecipeIngredient {
   ingredientCategory: Ingredient['category'];
 }
+
+type ParsedRecipeRow = {
+  finishedGoodName: string;
+  ingredientName: string;
+  ingredientCategory?: string;
+  amount: number;
+  unit: RecipeMeasureUnit;
+};
 
 const normalizeLabel = (value: string) =>
   value
@@ -39,16 +47,15 @@ const scoreMatch = (left: string, right: string) => {
   return overlap / Math.max(leftTokens.length, rightTokens.length);
 };
 
-const pickBestMatch = <T,>(
+const pickBestMatch = <T extends { name: string }>(
   items: T[],
-  getLabel: (item: T) => string,
   target: string,
   minimumScore = 0.45
 ): T | undefined => {
   let best: { item: T; score: number } | null = null;
 
   items.forEach((item) => {
-    const label = getLabel(item);
+    const label = item.name;
     const normalizedLabel = normalizeLabel(label);
     const normalizedTarget = normalizeLabel(target);
 
@@ -262,7 +269,7 @@ export function Recipes({ locationId }: { locationId: string }) {
   };
 
   const matchFinishedGood = (fileName: string): Ingredient | undefined => {
-    return pickBestMatch<Ingredient>(finishedGoods, (item) => item.name, fileName, 0.34);
+    return pickBestMatch(finishedGoods, fileName, 0.34);
   };
 
   const matchIngredient = (rawName: string): Ingredient | undefined => {
@@ -276,7 +283,7 @@ export function Recipes({ locationId }: { locationId: string }) {
       .filter(Boolean);
 
     for (const candidate of candidates) {
-      const exactish = pickBestMatch<Ingredient>(sourceIngredients, (item) => item.name, candidate, 0.5);
+      const exactish = pickBestMatch(sourceIngredients, candidate, 0.5);
       if (exactish) return exactish;
     }
 
@@ -380,7 +387,7 @@ export function Recipes({ locationId }: { locationId: string }) {
     }
   };
 
-  const handleRecipeUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRecipeUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -392,8 +399,8 @@ export function Recipes({ locationId }: { locationId: string }) {
       skipEmptyLines: true,
       complete: async (results) => {
         try {
-          const rows = (results.data as Record<string, string>[])
-            .map((row) => {
+          const rows: ParsedRecipeRow[] = (results.data as Record<string, string>[])
+            .map((row): ParsedRecipeRow => {
               const finishedGoodName = getRowValue(row, ['finished_good', 'finished good']);
               const ingredientName = getRowValue(row, ['ingredient_name', 'ingredient name', 'Ingredients', 'Ingredient', 'Name', 'Item']);
               const ingredientCategory = getRowValue(row, ['ingredient_category', 'ingredient category', 'category']);
@@ -439,7 +446,7 @@ export function Recipes({ locationId }: { locationId: string }) {
             const unmatchedMessages: string[] = [];
 
             for (const [finishedGoodLabel, recipeRows] of groupedRows.entries()) {
-              const finishedGood = pickBestMatch<Ingredient>(finishedGoods, (item) => item.name, finishedGoodLabel, 0.45);
+              const finishedGood = pickBestMatch(finishedGoods, finishedGoodLabel, 0.45);
               if (!finishedGood) {
                 unmatchedMessages.push(`Missing finished good: ${finishedGoodLabel}`);
                 continue;
