@@ -5,6 +5,7 @@ import { collection, onSnapshot, query, setDoc, doc, writeBatch, deleteDoc, getD
 import { db } from '../firebase';
 import { type Ingredient } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { INVENTORY_CATEGORIES, normalizeInventoryCategory, normalizeIngredient } from '../lib/inventoryCategories';
 import { v4 as uuidv4 } from 'uuid';
 import { Edit2, Check, X } from 'lucide-react';
 
@@ -23,10 +24,34 @@ export function Inventory({ locationId }: { locationId: string }) {
         id: doc.id,
         ...doc.data()
       })) as Ingredient[];
-      
-      // Filter logically if old dataset exists, or strictly match locationId
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
-      
+
+      items = items.map(normalizeIngredient);
+
+      if (locationId === 'all') {
+        const grouped = new Map<string, Ingredient>();
+        items.forEach((item) => {
+          const key = `${item.name}__${item.category}__${item.unit}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.quantityOnHand += item.quantityOnHand || 0;
+            const existingUpdated = existing.lastUpdated ? new Date(existing.lastUpdated).getTime() : 0;
+            const itemUpdated = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
+            if (itemUpdated > existingUpdated) existing.lastUpdated = item.lastUpdated;
+          } else {
+            grouped.set(key, {
+              ...item,
+              id: key,
+              locationId: 'all',
+              quantityOnHand: item.quantityOnHand || 0,
+            });
+          }
+        });
+        items = Array.from(grouped.values());
+      } else {
+        items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      }
+
+      items.sort((a, b) => a.name.localeCompare(b.name));
       setInventory(items);
       setLoading(false);
     }, (error) => {
@@ -40,9 +65,21 @@ export function Inventory({ locationId }: { locationId: string }) {
   const [isUploading, setIsUploading] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', category: 'Major Ingredient' as any, unit: 'kg', qty: '0' });
+  const [categoryFilter, setCategoryFilter] = useState<'all' | Ingredient['category']>('all');
+  const [newItem, setNewItem] = useState<{ name: string; category: Ingredient['category']; unit: string; qty: string }>({
+    name: '',
+    category: 'Major Ingredient',
+    unit: 'kg',
+    qty: '0',
+  });
+  const isTotalInventoryView = locationId === 'all';
+  const filteredInventory =
+    categoryFilter === 'all'
+      ? inventory
+      : inventory.filter((item) => item.category === categoryFilter);
 
   const handleReconcile = async (ingredientId: string) => {
+    if (isTotalInventoryView) return;
     const val = parseFloat(editValue);
     if (isNaN(val)) return;
     
@@ -62,6 +99,7 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleClearAll = async () => {
+    if (isTotalInventoryView) return;
     setIsUploading(true);
     setStatus(null);
     setShowConfirmReset(false);
@@ -69,7 +107,12 @@ export function Inventory({ locationId }: { locationId: string }) {
       const q = query(collection(db, 'inventory'));
       const snapshot = await getDocs(q);
       const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => batch.delete(d.ref));
+      snapshot.docs.forEach((d) => {
+        const data = d.data();
+        if (data.locationId === locationId || (!data.locationId && locationId === 'default')) {
+          batch.delete(d.ref);
+        }
+      });
       await batch.commit();
       setStatus({ type: 'success', msg: 'Inventory cleared successfully.' });
       setTimeout(() => setStatus(null), 5000);
@@ -84,6 +127,10 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isTotalInventoryView) {
+      setStatus({ type: 'error', msg: 'Choose a physical location before importing inventory.' });
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -139,19 +186,7 @@ export function Inventory({ locationId }: { locationId: string }) {
             (matchedKeys.unit ? normalizedRow[matchedKeys.unit] : null) || 
             row.Category || row.unit || row.type || row.Type || 'Major';
 
-          const categoryMapping = (cat: string, itemName: string): 'Major Ingredient' | 'Minor Ingredient' | 'Finished Good' => {
-            const lowCat = String(cat).toLowerCase();
-            const lowName = String(itemName).toLowerCase();
-            
-            // Explicitly check for "Finished Good" label or characteristic product keywords
-            if (lowCat.includes('finished') || lowCat.includes('good') || lowCat.includes('product')) return 'Finished Good';
-            if (lowName.includes('mix') || lowName.includes('granola')) return 'Finished Good';
-            
-            if (lowCat.includes('minor')) return 'Minor Ingredient';
-            return 'Major Ingredient';
-          };
-
-          const category = categoryMapping(String(rawUnit), name);
+          const category = normalizeInventoryCategory(String(rawUnit), name);
           const unitLabel = category === 'Finished Good' ? 'units' : 'kg';
 
           // Clean up quantity: handle "6.0", "1,200", "$10.50", etc.
@@ -159,9 +194,11 @@ export function Inventory({ locationId }: { locationId: string }) {
           const qty = parseFloat(cleanQtyStr);
           const finalQty = isNaN(qty) ? 0 : qty;
 
-          const docRef = doc(db, 'inventory', String(rawId).trim());
+          const scopedId = `${locationId}__${String(rawId).trim()}`;
+          const docRef = doc(db, 'inventory', scopedId);
           
           batch.set(docRef, {
+            id: scopedId,
             name,
             unit: unitLabel,
             category,
@@ -199,6 +236,7 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleAddItem = async () => {
+    if (isTotalInventoryView) return;
     if (!newItem.name.trim()) return;
     setIsUploading(true);
     setStatus(null);
@@ -207,7 +245,7 @@ export function Inventory({ locationId }: { locationId: string }) {
       await setDoc(docRef, {
         id: docRef.id,
         name: newItem.name.trim(),
-        category: newItem.category,
+        category: normalizeInventoryCategory(newItem.category, newItem.name.trim()),
         unit: newItem.unit,
         locationId,
         quantityOnHand: parseFloat(newItem.qty) || 0,
@@ -226,6 +264,7 @@ export function Inventory({ locationId }: { locationId: string }) {
   };
 
   const handleDeleteItem = async (id: string) => {
+    if (isTotalInventoryView) return;
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     setIsUploading(true);
     try {
@@ -245,14 +284,28 @@ export function Inventory({ locationId }: { locationId: string }) {
       <div className="flex justify-between items-end border-b border-zinc-200 pb-6">
         <div>
           <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Inventory Master</h2>
-          <p className="text-[13px] text-zinc-500 mt-1">Central stock records and reconciliation</p>
+          <p className="text-[13px] text-zinc-500 mt-1">
+            {isTotalInventoryView ? 'Aggregated inventory across every physical location' : 'Central stock records and reconciliation'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {(loading || isUploading) && <Loader2 className="h-4 w-4 text-accent animate-spin" />}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value as 'all' | Ingredient['category'])}
+            className="rounded border border-zinc-200 bg-white px-3 py-2 text-[12px] font-bold text-zinc-600"
+          >
+            <option value="all">ALL CATEGORIES</option>
+            {INVENTORY_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category.toUpperCase()}
+              </option>
+            ))}
+          </select>
           
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            disabled={isUploading}
+            disabled={isUploading || isTotalInventoryView}
             className="px-4 py-2 bg-white border border-zinc-200 text-zinc-600 rounded text-[12px] font-bold flex items-center gap-2 hover:bg-zinc-50 transition-colors"
           >
             <Box className="h-3.5 w-3.5" />
@@ -281,7 +334,7 @@ export function Inventory({ locationId }: { locationId: string }) {
               ) : (
                 <button
                   onClick={() => setShowConfirmReset(true)}
-                  disabled={isUploading}
+                  disabled={isUploading || isTotalInventoryView}
                   className="px-4 py-2 bg-white border border-red-200 text-red-600 rounded text-[12px] font-bold flex items-center gap-2 hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -300,7 +353,7 @@ export function Inventory({ locationId }: { locationId: string }) {
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || isTotalInventoryView}
             className="px-4 py-2 bg-zinc-900 text-white rounded text-[12px] font-bold flex items-center gap-2 hover:bg-black transition-colors"
           >
             <Upload className="h-4 w-4" />
@@ -309,7 +362,13 @@ export function Inventory({ locationId }: { locationId: string }) {
         </div>
       </div>
 
-      {showAddForm && (
+      {isTotalInventoryView && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          Total Inventory is a read-only rollup. Choose a named physical location like <span className="font-semibold">Sterling, IL</span> to import, reconcile, or edit stock.
+        </div>
+      )}
+
+      {showAddForm && !isTotalInventoryView && (
         <div className="technical-card p-4 bg-zinc-50 border-zinc-200 animate-in fade-in slide-in-from-top-2">
           <div className="flex flex-col gap-4">
             <h3 className="text-[12px] font-bold text-zinc-800 uppercase tracking-widest">New Inventory Item</h3>
@@ -324,7 +383,7 @@ export function Inventory({ locationId }: { locationId: string }) {
               <select 
                 className="px-3 py-2 border border-zinc-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 bg-white"
                 value={newItem.category}
-                onChange={e => setNewItem({...newItem, category: e.target.value as any})}
+                onChange={(e) => setNewItem({ ...newItem, category: e.target.value as Ingredient['category'] })}
               >
                 <option value="Major Ingredient">Major Ingredient</option>
                 <option value="Minor Ingredient">Minor Ingredient</option>
@@ -386,15 +445,19 @@ export function Inventory({ locationId }: { locationId: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {inventory.length === 0 && !loading ? (
+              {filteredInventory.length === 0 && !loading ? (
                 <tr>
                   <td colSpan={6} className="py-24 text-center">
                     <Box className="h-10 w-10 text-zinc-100 mx-auto mb-4" />
-                    <p className="text-zinc-400 text-sm italic">Inventory database is empty. Upload a CSV to begin.</p>
+                    <p className="text-zinc-400 text-sm italic">
+                      {inventory.length === 0
+                        ? (isTotalInventoryView ? 'No inventory has been entered for any location yet.' : 'Inventory database is empty. Upload a CSV to begin.')
+                        : 'No inventory matches the selected category.'}
+                    </p>
                   </td>
                 </tr>
               ) : (
-                inventory.map((item) => {
+                filteredInventory.map((item) => {
                   const isLow = (item.category === 'Major Ingredient' && item.quantityOnHand < 20) || 
                                 (item.category === 'Minor Ingredient' && item.quantityOnHand < 5);
                   
@@ -416,7 +479,7 @@ export function Inventory({ locationId }: { locationId: string }) {
                           item.category === 'Minor Ingredient' ? 'bg-amber-50 border-amber-100 text-amber-600' :
                           'bg-emerald-50 border-emerald-100 text-emerald-600'
                         }`}>
-                          {item.category?.toUpperCase() || 'GENERAL'}
+                          {item.category.toUpperCase()}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -475,14 +538,16 @@ export function Inventory({ locationId }: { locationId: string }) {
                                   setEditingId(item.id);
                                   setEditValue(item.quantityOnHand.toString());
                                 }}
-                                className="p-1.5 hover:bg-zinc-100 rounded transition-all hover:text-zinc-900"
+                                disabled={isTotalInventoryView}
+                                className="p-1.5 hover:bg-zinc-100 rounded transition-all hover:text-zinc-900 disabled:opacity-40 disabled:hover:bg-transparent"
                                 title="Reconcile Stock"
                               >
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDeleteItem(item.id)}
-                                className="p-1.5 hover:bg-red-50 text-red-400 hover:text-red-600 rounded transition-all"
+                                disabled={isTotalInventoryView}
+                                className="p-1.5 hover:bg-red-50 text-red-400 hover:text-red-600 rounded transition-all disabled:opacity-40 disabled:hover:bg-transparent"
                                 title="Delete Item"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -502,4 +567,3 @@ export function Inventory({ locationId }: { locationId: string }) {
     </div>
   );
 }
-
