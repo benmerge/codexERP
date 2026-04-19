@@ -40,7 +40,21 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
 
     const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      if (locationId === 'all') {
+        const grouped = new Map<string, Ingredient>();
+        items.forEach((item) => {
+          const key = `${item.name}__${item.category}__${item.unit}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.quantityOnHand += item.quantityOnHand || 0;
+          } else {
+            grouped.set(key, { ...item, id: key, locationId: 'all' });
+          }
+        });
+        items = Array.from(grouped.values());
+      } else {
+        items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      }
       setInventory(items);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'inventory');
@@ -48,7 +62,11 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
 
     const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Recipe[];
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      items = items.filter((i) =>
+        locationId === 'all'
+          ? true
+          : i.locationId === locationId || !i.locationId || (!i.locationId && locationId === 'default')
+      );
       setRecipes(items);
       setLoading(false);
     }, (err) => {
@@ -63,7 +81,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
   const selectedRecipeName = selectedRecipe?.finishedGoodName || selectedRecipe?.name || 'Selected recipe';
 
   const requirements = selectedRecipe ? selectedRecipe.ingredients.map(ing => {
-    const item = inventory.find(i => i.id === ing.ingredientId);
+    const item = inventory.find(i => i.id === ing.ingredientId || (!!ing.ingredientName && i.name === ing.ingredientName));
     const recipeUnit = ing.unit || 'g';
     const inventoryUnit = item?.unit || recipeUnit;
     const requiredInInvUnit = convertMeasurement(ing.amount * batchMultiplier, recipeUnit, inventoryUnit);
@@ -72,7 +90,8 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
     
     return {
       ingredientId: ing.ingredientId,
-      name: item?.name || 'Unknown',
+      inventoryDocId: item?.id,
+      name: item?.name || ing.ingredientName || 'Unknown',
       recipeUnit,
       unitInInv: inventoryUnit,
       requiredInInvUnit,
@@ -82,25 +101,25 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
   }) : [];
 
   const canFulfill = requirements.length > 0 && requirements.every(r => r.missing === 0);
+  const canCommitBatch = canFulfill && locationId !== 'all';
 
   const handleDeduct = async () => {
-    if (!canFulfill || !selectedRecipe) return;
+    if (!canCommitBatch || !selectedRecipe) return;
     setIsDeducting(true);
     setStatus(null);
 
     try {
       const batch = writeBatch(db);
       
-      // Deduct Ingredients
       requirements.forEach(req => {
-        const docRef = doc(db, 'inventory', req.ingredientId);
+        if (!req.inventoryDocId) return;
+        const docRef = doc(db, 'inventory', req.inventoryDocId);
         batch.update(docRef, {
           quantityOnHand: Number((req.onHand - req.requiredInInvUnit).toFixed(4)),
           lastUpdated: new Date().toISOString()
         });
       });
 
-      // Increment Finished Good
       const targetFinishedGood = inventory.find((i) =>
         i.category === 'Finished Good' &&
         (i.id === selectedRecipe.finishedGoodId || i.name === selectedRecipeName)
@@ -227,15 +246,15 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                 </div>
                 <button
                   onClick={handleDeduct}
-                  disabled={!canFulfill || isDeducting}
+                  disabled={!canCommitBatch || isDeducting}
                   className={`flex items-center gap-3 px-10 py-4 rounded-lg font-bold uppercase tracking-widest text-[12px] transition-all ${
-                    canFulfill 
+                    canCommitBatch 
                       ? 'bg-accent text-zinc-900 hover:bg-amber-400 shadow-xl shadow-amber-900/20 active:translate-y-px' 
                       : 'bg-zinc-800 text-zinc-600 cursor-not-allowed border border-zinc-700'
                   }`}
                 >
                   {isDeducting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Scale className="h-4 w-4" />}
-                  {canFulfill ? 'COMMIT BATCH & SYNC' : 'INSUFFICIENT STOCK'}
+                  {locationId === 'all' ? 'CHOOSE LOCATION TO COMMIT' : canFulfill ? 'COMMIT BATCH & SYNC' : 'INSUFFICIENT STOCK'}
                 </button>
               </div>
             )}
@@ -287,6 +306,12 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
               }`}>
                 {status.type === 'success' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5" /> : <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />}
                 <p className="text-[12px] font-medium leading-relaxed">{status.msg}</p>
+              </div>
+            )}
+
+            {locationId === 'all' && (
+              <div className="rounded border border-amber-200 bg-amber-50 p-4 text-[12px] font-medium leading-relaxed text-amber-800">
+                Total Inventory is planning-only. Switch to a named location to commit a real batch deduction.
               </div>
             )}
           </div>
