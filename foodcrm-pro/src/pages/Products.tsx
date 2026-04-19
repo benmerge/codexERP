@@ -1,21 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../data/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, Trash2, Edit, Package, History, ArrowUpRight, ArrowDownRight, Settings2 } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, Package, History, ArrowUpRight, ArrowDownRight, Settings2, RefreshCw } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Product, InventoryStatus } from '../types';
+import { collection, getDocs, query } from 'firebase/firestore';
+import { miremixDb } from '../firebase';
 
 export const Products = () => {
   const { products, addProduct, updateProduct, deleteProduct, orders, suppliers } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const hasAutoSyncedRef = useRef(false);
 
   // Form state
   const [name, setName] = useState('');
@@ -27,10 +33,17 @@ export const Products = () => {
   const [supplierId, setSupplierId] = useState('');
 
   const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
+    (
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.category.toLowerCase().includes(searchTerm.toLowerCase())
+    ) &&
+    (categoryFilter === 'all' || p.category === categoryFilter)
   );
+
+  const availableCategories = Array.from(new Set(products.map((product) => product.category)))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
 
   const resetForm = () => {
     setName('');
@@ -96,6 +109,97 @@ export const Products = () => {
     }
   };
 
+  const slugify = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const importFinishedGoods = async (options?: { silent?: boolean }) => {
+    setIsImporting(true);
+    if (!options?.silent) {
+      setImportMessage(null);
+    }
+
+    try {
+      const snapshot = await getDocs(query(collection(miremixDb, 'inventory')));
+      const grouped = new Map<string, { name: string; stock: number; unit: string }>();
+
+      snapshot.docs.forEach((entry) => {
+        const data = entry.data() as Record<string, unknown>;
+        const category = String(data.category || '').trim().toLowerCase();
+        if (category !== 'finished good') return;
+
+        const name = String(data.name || '').trim();
+        if (!name) return;
+
+        const key = name.toLowerCase();
+        const existing = grouped.get(key);
+        const stock = Number(data.quantityOnHand || 0);
+        const unit = String(data.unit || 'units').trim() || 'units';
+
+        if (existing) {
+          existing.stock += Number.isFinite(stock) ? stock : 0;
+        } else {
+          grouped.set(key, {
+            name,
+            stock: Number.isFinite(stock) ? stock : 0,
+            unit,
+          });
+        }
+      });
+
+      if (grouped.size === 0) {
+        throw new Error('No finished goods were found in MiRemix inventory.');
+      }
+
+      for (const finishedGood of grouped.values()) {
+        const existingProduct = products.find((product) => product.name.toLowerCase() === finishedGood.name.toLowerCase());
+        const nextProduct: Product = {
+          id: existingProduct?.id || `mrp-${slugify(finishedGood.name)}`,
+          name: finishedGood.name,
+          category: existingProduct?.category || 'Finished Good',
+          sku: existingProduct?.sku || `MRP-${slugify(finishedGood.name).toUpperCase()}`,
+          stock: Number(finishedGood.stock.toFixed(3)),
+          unit: finishedGood.unit,
+          price: existingProduct?.price || 0,
+          supplierId: existingProduct?.supplierId || '',
+          status:
+            finishedGood.stock > 20 ? 'In Stock' :
+            finishedGood.stock > 0 ? 'Low Stock' :
+            'Out of Stock',
+        };
+
+        if (existingProduct) {
+          await updateProduct(nextProduct);
+        } else {
+          await addProduct(nextProduct);
+        }
+      }
+
+      if (!options?.silent) {
+        setImportMessage({
+          type: 'success',
+          text: `Imported ${grouped.size} finished good${grouped.size === 1 ? '' : 's'} from MiRemix.`,
+        });
+      }
+    } catch (error) {
+      setImportMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to import finished goods from MiRemix.',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (hasAutoSyncedRef.current) return;
+    hasAutoSyncedRef.current = true;
+    void importFinishedGoods({ silent: true });
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-end">
@@ -106,7 +210,30 @@ export const Products = () => {
           </div>
           <p className="text-sm text-slate-500">Real-time stock levels, committed inventory, and unit pricing.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[180px] border-slate-200 bg-white">
+              <SelectValue placeholder="Filter category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {availableCategories.map((productCategory) => (
+                <SelectItem key={productCategory} value={productCategory}>
+                  {productCategory}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={importFinishedGoods}
+            disabled={isImporting}
+            className="border-slate-200"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isImporting ? 'animate-spin' : ''}`} />
+            Import MiRemix Finished Goods
+          </Button>
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
             setIsDialogOpen(open);
             if (!open) resetForm();
@@ -187,6 +314,16 @@ export const Products = () => {
           </Dialog>
         </div>
       </div>
+
+      {importMessage && (
+        <div className={`rounded-lg border px-4 py-3 text-sm ${
+          importMessage.type === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-rose-200 bg-rose-50 text-rose-800'
+        }`}>
+          {importMessage.text}
+        </div>
+      )}
 
       <Card className="border-slate-200 shadow-sm overflow-hidden">
         <CardHeader className="bg-slate-50/50 border-b pb-4">
