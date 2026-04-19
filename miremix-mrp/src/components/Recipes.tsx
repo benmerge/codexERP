@@ -73,6 +73,13 @@ const getRowValue = (row: Record<string, string>, aliases: string[]) => {
   return '';
 };
 
+const getRecipeUnit = (rawUnit: string): RecipeMeasureUnit => {
+  const normalized = rawUnit.trim().toLowerCase();
+  if (normalized === 'kg') return 'kg';
+  if (normalized === 'ml') return 'ml';
+  return 'g';
+};
+
 export function Recipes({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<Ingredient[]>([]);
@@ -212,6 +219,39 @@ export function Recipes({ locationId }: { locationId: string }) {
     return undefined;
   };
 
+  const buildRecipeLine = (row: {
+    ingredientName: string;
+    ingredientCategory?: string;
+    amount: number;
+    unit: RecipeMeasureUnit;
+  }) => {
+    const ingredient = matchIngredient(row.ingredientName);
+    if (!ingredient) {
+      return {
+        error: row.ingredientName,
+      } as const;
+    }
+
+    if (
+      row.ingredientCategory &&
+      ingredient.category !== row.ingredientCategory &&
+      row.ingredientCategory !== 'Finished Good'
+    ) {
+      return {
+        error: `${row.ingredientName} (expected ${row.ingredientCategory}, found ${ingredient.category})`,
+      } as const;
+    }
+
+    return {
+      recipeIngredient: {
+        ingredientId: ingredient.id,
+        ingredientName: ingredient.name,
+        amount: row.amount,
+        unit: row.unit,
+      } satisfies RecipeIngredient,
+    } as const;
+  };
+
   const handleSaveRecipe = async () => {
     const finishedGood = inventory.find((item) => item.id === draftFinishedGoodId && item.category === 'Finished Good');
     if (!finishedGood) {
@@ -264,35 +304,111 @@ export function Recipes({ locationId }: { locationId: string }) {
       skipEmptyLines: true,
       complete: async (results) => {
         try {
+          const rows = (results.data as Record<string, string>[])
+            .map((row) => {
+              const finishedGoodName = getRowValue(row, ['finished_good', 'finished good']);
+              const ingredientName = getRowValue(row, ['ingredient_name', 'ingredient name', 'Ingredients', 'Ingredient', 'Name', 'Item']);
+              const ingredientCategory = getRowValue(row, ['ingredient_category', 'ingredient category', 'category']);
+              const amountValue = getRowValue(row, ['amount', 'g per package', 'grams per package', 'Qty', 'Quantity']);
+              const unitValue = getRowValue(row, ['unit', 'uom']);
+              const amount = parseFloat(amountValue.replace(/[^0-9.-]/g, ''));
+
+              return {
+                finishedGoodName,
+                ingredientName,
+                ingredientCategory: ingredientCategory || undefined,
+                amount,
+                unit: getRecipeUnit(unitValue),
+              };
+            })
+            .filter((row) =>
+              row.ingredientName &&
+              row.ingredientName.toLowerCase() !== 'total' &&
+              !Number.isNaN(row.amount)
+            );
+
+          if (rows.length === 0) {
+            throw new Error('No ingredient lines were imported from the CSV.');
+          }
+
+          const hasFinishedGoodColumn = rows.some((row) => row.finishedGoodName);
+
+          if (hasFinishedGoodColumn) {
+            const groupedRows = new Map<string, typeof rows>();
+            rows.forEach((row) => {
+              const key = row.finishedGoodName.trim();
+              if (!key) return;
+              const existing = groupedRows.get(key) || [];
+              existing.push(row);
+              groupedRows.set(key, existing);
+            });
+
+            if (groupedRows.size === 0) {
+              throw new Error('The CSV includes a finished_good column, but no finished good names were found.');
+            }
+
+            const importedNames: string[] = [];
+            const unmatchedMessages: string[] = [];
+
+            for (const [finishedGoodLabel, recipeRows] of groupedRows.entries()) {
+              const finishedGood = pickBestMatch(finishedGoods, (item) => item.name, finishedGoodLabel, 0.45);
+              if (!finishedGood) {
+                unmatchedMessages.push(`Missing finished good: ${finishedGoodLabel}`);
+                continue;
+              }
+
+              const recipeIngredients: RecipeIngredient[] = [];
+              recipeRows.forEach((row) => {
+                const result = buildRecipeLine(row);
+                if ('error' in result) {
+                  unmatchedMessages.push(`${finishedGoodLabel}: ${result.error}`);
+                  return;
+                }
+                recipeIngredients.push(result.recipeIngredient);
+              });
+
+              if (recipeIngredients.length === 0) {
+                unmatchedMessages.push(`${finishedGoodLabel}: no ingredient lines matched inventory`);
+                continue;
+              }
+
+              await addDoc(collection(db, 'recipes'), {
+                name: finishedGood.name,
+                finishedGoodId: finishedGood.id,
+                finishedGoodName: finishedGood.name,
+                locationId: locationId === 'all' ? undefined : locationId,
+                ingredients: recipeIngredients,
+              });
+
+              importedNames.push(finishedGood.name);
+            }
+
+            if (unmatchedMessages.length > 0) {
+              throw new Error(`Imported ${importedNames.length} recipe(s), but some rows still need cleanup: ${unmatchedMessages.join('; ')}`);
+            }
+
+            setStatus({
+              type: 'success',
+              msg: `Imported ${importedNames.length} recipe${importedNames.length === 1 ? '' : 's'} from ${file.name}.`,
+            });
+            return;
+          }
+
           const finishedGood = matchFinishedGood(file.name);
           if (!finishedGood) {
             throw new Error(`Could not match a finished good from "${file.name}". Add that finished good to Inventory Master first.`);
           }
 
-          const parsedIngredients = (results.data as Record<string, string>[])
-            .map((row) => {
-              const ingredientName = getRowValue(row, ['Ingredients', 'Ingredient', 'Name', 'Item']);
-              const gramsValue = getRowValue(row, ['g per package', 'grams per package', 'Amount', 'Qty', 'Quantity']);
-              const gramsPerPackage = parseFloat(gramsValue.replace(/[^0-9.-]/g, ''));
-              return { ingredientName, gramsPerPackage };
-            })
-            .filter((row) => row.ingredientName && row.ingredientName.toLowerCase() !== 'total' && !Number.isNaN(row.gramsPerPackage));
-
           const unmatched: string[] = [];
           const recipeIngredients: RecipeIngredient[] = [];
 
-          parsedIngredients.forEach((row) => {
-            const ingredient = matchIngredient(row.ingredientName);
-            if (!ingredient) {
-              unmatched.push(row.ingredientName);
+          rows.forEach((row) => {
+            const result = buildRecipeLine(row);
+            if ('error' in result) {
+              unmatched.push(result.error);
               return;
             }
-            recipeIngredients.push({
-              ingredientId: ingredient.id,
-              ingredientName: ingredient.name,
-              amount: row.gramsPerPackage,
-              unit: 'g',
-            });
+            recipeIngredients.push(result.recipeIngredient);
           });
 
           if (recipeIngredients.length === 0) {
