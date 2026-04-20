@@ -20,6 +20,18 @@ export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, o
   const { updateCustomer } = useAppContext();
   const [status, setStatus] = useState<OrderStatus>('Order placed');
   const [salesRepId, setSalesRepId] = useState('');
+  const salesRepOptions = React.useMemo(() => {
+    if (!order?.salesRepId) return salesReps;
+    if (salesReps.some((rep) => rep.id === order.salesRepId)) return salesReps;
+    return [
+      {
+        id: order.salesRepId,
+        email: order.salesRepEmail || order.salesRepName || '',
+        displayName: order.salesRepName || order.salesRepEmail || 'Assigned rep',
+      },
+      ...salesReps,
+    ];
+  }, [salesReps, order]);
 
   useEffect(() => {
     if (order) {
@@ -37,7 +49,7 @@ export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, o
         ...order,
         status,
         salesRepId: customer?.salesRepId || salesRepId,
-        salesRepName: customer?.salesRepName || salesRep?.displayName || salesRep?.email || order.salesRepName,
+        salesRepName: customer?.salesRepName || salesRep?.displayName || salesRep?.email || order.salesRepName || 'Assigned rep',
         salesRepEmail: customer?.salesRepEmail || salesRep?.email || order.salesRepEmail,
       };
       
@@ -120,9 +132,9 @@ export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, o
                   <SelectValue placeholder="Select a sales rep" />
                 </SelectTrigger>
                 <SelectContent>
-                  {salesReps.map((rep) => (
+                  {salesRepOptions.map((rep) => (
                     <SelectItem key={rep.id} value={rep.id}>
-                      {rep.displayName || rep.email}
+                      {rep.displayName || rep.email || 'Assigned rep'}
                     </SelectItem>
                   ))}
                 </SelectContent>
