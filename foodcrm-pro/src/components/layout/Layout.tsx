@@ -101,14 +101,14 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
       <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
         <DialogContent className="max-w-md crm-panel">
           <DialogHeader>
-            <DialogTitle>Reset Shared Test Org</DialogTitle>
+            <DialogTitle>Reset Test Org</DialogTitle>
             <DialogDescription>
-              This clears the shared CRM test workspace and reseeds it with fresh demo customers, products, suppliers, tasks, and orders.
+              This clears the shared test workspace and reseeds it with fresh demo customers, products, suppliers, tasks, and orders.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>All CRM users and the MiRemix MRP dashboard will immediately see the new shared test dataset.</span>
+            <span>All connected users and the MiRemix MRP dashboard will immediately see the new shared test dataset.</span>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsResetOpen(false)} disabled={isResetting}>Cancel</Button>
@@ -122,7 +122,7 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
       <aside className="h-full w-[88vw] max-w-72 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800">
         <div className="p-6 text-white">
           <div className="mb-5 flex items-center justify-between md:hidden">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Navigation</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-200/70">Navigation</div>
             <Button variant="ghost" size="icon" onClick={onClose} className="text-slate-300 hover:text-white hover:bg-white/8">
               <X className="w-4 h-4" />
             </Button>
@@ -132,17 +132,8 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
               <Building2 className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">CRM</span>
-              <span className="font-semibold text-xl tracking-tight block leading-tight text-white">MiCRM Pro</span>
+              <span className="font-semibold text-xl tracking-tight block leading-tight text-white">MiCRM</span>
             </div>
-          </div>
-          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-              Shared Data
-            </div>
-            <p className="mt-2 text-sm leading-5 text-slate-400">
-              Customers, orders, products, suppliers, and tasks update for the whole team.
-            </p>
           </div>
         </div>
         
@@ -224,12 +215,6 @@ export const Layout = () => {
             <Button variant="ghost" size="icon" className="mt-0.5 md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu className="w-5 h-5" />
             </Button>
-              <div>
-                <div className="crm-kicker">CRM</div>
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:gap-3">
-                  <h1 className="text-xl font-semibold tracking-tight text-slate-950 md:text-2xl">Shared CRM Workspace</h1>
-                </div>
-              </div>
             </div>
             <div className="flex items-center gap-2 md:gap-3">
               <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 md:text-[11px] md:tracking-[0.24em]">
