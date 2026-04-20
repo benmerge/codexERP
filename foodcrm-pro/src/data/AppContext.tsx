@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Customer, Order, Product, Supplier, Task, InventoryStatus } from '../types';
+import { Customer, Order, Product, Supplier, Task, InventoryStatus, OrgMember } from '../types';
 import { db, auth } from '../firebase';
 import { collection, doc, setDoc, onSnapshot, query, deleteDoc, getDocFromServer, getDocs, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -13,6 +13,7 @@ import { initialCustomers, initialOrders, initialProducts, initialSuppliers, ini
 interface AppState {
   user: User | null;
   clientLogo: string | null;
+  salesReps: OrgMember[];
   customers: Customer[];
   orders: Order[];
   products: Product[];
@@ -59,10 +60,40 @@ interface FirestoreErrorInfo {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
+const SHARED_CRM_DOMAINS = ['40centurygrain.com', '40centurygrain.earth', 'mergeimpact.com'];
+
+const sanitizeSegment = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const getEmailDomain = (email?: string | null) => {
+  if (!email || !email.includes('@')) return null;
+  return email.split('@')[1]?.toLowerCase() ?? null;
+};
+
+const resolveOrgId = (currentUser: User | null) => {
+  if (!currentUser?.uid) return null;
+
+  const domain = getEmailDomain(currentUser.email);
+  if (domain && SHARED_CRM_DOMAINS.includes(domain)) {
+    return crmAppConfig.sharedOrgId;
+  }
+
+  if (domain) {
+    return `org_${sanitizeSegment(domain)}`;
+  }
+
+  return `org_${sanitizeSegment(currentUser.uid)}`;
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [clientLogo, setClientLogo] = useState<string | null>(null);
+  const [salesReps, setSalesReps] = useState<OrgMember[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -89,13 +120,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Bootstrap user metadata and org grouping
       if (currentUser) {
         const dataId = getDataId(currentUser);
-        setDoc(doc(db, 'users', currentUser.uid), {
-          email: currentUser.email,
-          role: currentUser.email === 'ben@mergeimpact.com' ? 'admin' : 'user',
-          orgId: dataId
-        }, { merge: true }).catch(err => {
-          console.error("Error bootstrapping user:", err);
-        });
+        void (async () => {
+          try {
+            await setDoc(doc(db, 'users', currentUser.uid), {
+              email: currentUser.email,
+              displayName: currentUser.displayName || currentUser.email,
+              role: currentUser.email === 'ben@mergeimpact.com' ? 'admin' : 'user',
+              orgId: dataId
+            }, { merge: true });
+
+            await setDoc(doc(db, `users/${dataId}/team`, currentUser.uid), {
+              email: currentUser.email,
+              displayName: currentUser.displayName || currentUser.email,
+              role: currentUser.email === 'ben@mergeimpact.com' ? 'admin' : 'user',
+              orgId: dataId,
+            }, { merge: true });
+          } catch (err) {
+            console.error("Error bootstrapping user/team membership:", err);
+          }
+        })();
       }
     }, (err) => {
       console.error("onAuthStateChanged error:", err);
@@ -144,6 +187,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const dataId = getDataId(user);
     if (!isAuthReady || !dataId) {
       setCustomers([]);
+      setSalesReps([]);
       setTasks([]);
       setOrders([]);
       setProducts([]);
@@ -232,6 +276,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       handleFirestoreError(error, OperationType.LIST, `users/${dataId}/suppliers`);
     });
 
+    const teamRef = collection(db, `users/${dataId}/team`);
+    const unsubscribeTeam = onSnapshot(teamRef, (snapshot) => {
+      const loadedMembers: OrgMember[] = [];
+      snapshot.forEach((entry) => {
+        loadedMembers.push({ ...entry.data(), id: entry.id } as OrgMember);
+      });
+      loadedMembers.sort((left, right) => {
+        const leftLabel = left.displayName || left.email;
+        const rightLabel = right.displayName || right.email;
+        return leftLabel.localeCompare(rightLabel);
+      });
+      setSalesReps(loadedMembers);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${dataId}/team`);
+    });
+
     return () => {
       unsubscribeUser();
       unsubscribeCustomers();
@@ -239,13 +299,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubscribeOrders();
       unsubscribeProducts();
       unsubscribeSuppliers();
+      unsubscribeTeam();
     };
   }, [user, isAuthReady]);
 
-  const getDataId = (currentUser: User | null) => {
-    if (!currentUser || !currentUser.uid) return null;
-    return crmAppConfig.sharedOrgId;
-  };
+  const getDataId = (currentUser: User | null) => resolveOrgId(currentUser);
 
   const updateClientLogo = async (logoBase64: string) => {
     const dataId = getDataId(user);
@@ -305,6 +363,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const decorateOrderForStorage = (order: Order, dataId: string) => {
     const customer = customers.find((entry) => entry.id === order.customerId);
+    const currentRep =
+      salesReps.find((entry) => entry.id === order.salesRepId) ||
+      salesReps.find((entry) => entry.id === customer?.salesRepId) ||
+      (user ? {
+        id: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || user.email || 'Sales Rep',
+      } : null);
     const items = order.items.map((item) => {
       const product = products.find((entry) => entry.id === item.productId);
       return removeUndefined({
@@ -321,6 +387,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       customerName: customer?.name,
       customerCompany: customer?.company || customer?.name,
       customerEmail: customer?.email,
+      salesRepId: order.salesRepId || customer?.salesRepId || currentRep?.id,
+      salesRepName: order.salesRepName || customer?.salesRepName || currentRep?.displayName,
+      salesRepEmail: order.salesRepEmail || customer?.salesRepEmail || currentRep?.email,
       items,
     });
   };
@@ -338,6 +407,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: customerEmail,
+          salesRepEmail: order.salesRepEmail,
           customerName,
           orderId: order.id,
           status: order.status,
@@ -567,14 +637,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       });
 
-      seedBatch.set(
-        doc(db, 'users', dataId),
-        {
-          orgId: dataId,
-          seededAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      seedBatch.set(doc(db, 'users', dataId), { orgId: dataId }, { merge: true });
 
       await seedBatch.commit();
     } catch (err) {
@@ -714,6 +777,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <AppContext.Provider value={{
       user,
       clientLogo,
+      salesReps,
       customers, orders, products, suppliers, tasks,
       addCustomer, addCustomers, updateCustomer, deleteCustomer,
       addOrder, updateOrder, deleteOrder,

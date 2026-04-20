@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Customer, Order, OrderItem, OrderStatus, Product } from '../types';
+import { Customer, Order, OrderItem, OrderStatus, OrgMember, Product } from '../types';
 import { Plus, Trash2 } from 'lucide-react';
 
 interface CreateOrderDialogProps {
@@ -13,12 +13,21 @@ interface CreateOrderDialogProps {
   onSave: (order: Order) => void;
   customers: Customer[];
   products: Product[];
+  salesReps: OrgMember[];
 }
 
-export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOpenChange, onSave, customers, products }) => {
+export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOpenChange, onSave, customers, products, salesReps }) => {
   const [customerId, setCustomerId] = useState('');
   const [items, setItems] = useState<OrderItem[]>([{ productId: '', quantity: 1 }]);
   const [status, setStatus] = useState<OrderStatus>('Order placed');
+  const [salesRepId, setSalesRepId] = useState('');
+  const selectedCustomer = customers.find((entry) => entry.id === customerId);
+
+  const handleCustomerChange = (value: string) => {
+    setCustomerId(value);
+    const nextCustomer = customers.find((entry) => entry.id === value);
+    setSalesRepId(nextCustomer?.salesRepId || salesReps[0]?.id || '');
+  };
 
   const handleAddItem = () => {
     setItems([...items, { productId: '', quantity: 1 }]);
@@ -44,9 +53,14 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
       return sum + (product?.price || 0) * item.quantity;
     }, 0);
 
+    const customer = customers.find((entry) => entry.id === customerId);
+    const selectedSalesRep = salesReps.find((rep) => rep.id === salesRepId) || salesReps.find((rep) => rep.id === customer?.salesRepId);
     const newOrder: Order = {
       id: `ORD-${Date.now().toString().slice(-6)}`,
       customerId,
+      salesRepId: selectedSalesRep?.id || customer?.salesRepId,
+      salesRepName: selectedSalesRep?.displayName || selectedSalesRep?.email || customer?.salesRepName,
+      salesRepEmail: selectedSalesRep?.email || customer?.salesRepEmail,
       date: new Date().toISOString().split('T')[0],
       status,
       items: items.map(i => ({ ...i, price: products.find(p => p.id === i.productId)?.price })),
@@ -64,39 +78,83 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Create New Order</DialogTitle>
+          <DialogTitle className="text-xl">Create New Order</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6 pt-4">
-          <div className="space-y-2">
-            <Label>Customer</Label>
-            <Select value={customerId} onValueChange={setCustomerId} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a customer" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers.map(c => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.company || c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-4 md:grid-cols-[1.35fr_0.85fr]">
+            <div className="space-y-2">
+              <Label>Customer</Label>
+              <Select value={customerId} onValueChange={handleCustomerChange} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a customer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.company || c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Account rep: {selectedCustomer?.salesRepName || selectedCustomer?.salesRepEmail || 'Assign one on the customer/prospect record first'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Order Status</Label>
+              <Select value={status} onValueChange={(v: OrderStatus) => setStatus(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Order placed">Order placed</SelectItem>
+                  <SelectItem value="Shipped">Shipped</SelectItem>
+                  <SelectItem value="Delivered">Delivered</SelectItem>
+                  <SelectItem value="Cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>Order Items</Label>
+
+          <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
+            <div className="space-y-2">
+              <Label>Account Rep</Label>
+              <Select value={salesRepId} onValueChange={setSalesRepId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a rep" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesReps.map((rep) => (
+                    <SelectItem key={rep.id} value={rep.id}>
+                      {rep.displayName || rep.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Select the rep who owns this account so status updates go to the right person.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <Label>Order Items</Label>
+                <p className="text-xs text-slate-500">Choose products and quantities for this order.</p>
+              </div>
               <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>
                 <Plus className="w-4 h-4 mr-2" /> Add Item
               </Button>
             </div>
-            
+
             <div className="space-y-3">
               {items.map((item, index) => (
-                <div key={index} className="flex gap-4 items-end bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <div className="flex-1 space-y-2">
+                <div key={index} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_7rem_auto] md:items-end">
+                  <div className="space-y-2 min-w-0">
                     <Label className="text-xs">Product</Label>
                     <Select 
                       value={item.productId} 
@@ -116,7 +174,7 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
                     </Select>
                   </div>
                   
-                  <div className="w-24 space-y-2">
+                  <div className="space-y-2">
                     <Label className="text-xs">Quantity</Label>
                     <Input 
                       type="number" 
@@ -128,46 +186,38 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
                     />
                   </div>
                   
-                  {items.length > 1 && (
+                  {items.length > 1 ? (
                     <Button 
                       type="button" 
                       variant="ghost" 
                       size="icon" 
-                      className="text-slate-400 hover:text-red-600 mb-[2px]"
+                      className="text-slate-400 hover:text-red-600 md:mb-[2px]"
                       onClick={() => handleRemoveItem(index)}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
+                  ) : (
+                    <div />
                   )}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto] md:items-end">
             <div className="space-y-2">
-              <Label>Order Status</Label>
-              <Select value={status} onValueChange={(v: OrderStatus) => setStatus(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Order placed">Order placed</SelectItem>
-                  <SelectItem value="Shipped">Shipped</SelectItem>
-                  <SelectItem value="Delivered">Delivered</SelectItem>
-                  <SelectItem value="Cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="flex flex-col justify-end items-end pr-2 pb-1">
               <span className="text-sm text-slate-500">Estimated Total</span>
-              <span className="text-xl font-bold text-emerald-600">
+              <span className="text-2xl font-bold text-emerald-600">
                 ${items.reduce((sum, item) => {
                   const product = products.find(p => p.id === item.productId);
                   return sum + (product?.price || 0) * item.quantity;
                 }, 0).toFixed(2)}
               </span>
+            </div>
+            <div className="flex items-end justify-start md:justify-end">
+              <p className="text-xs text-slate-500 max-w-xs">
+                The selected customer's account rep will stay attached to the order for status alerts.
+              </p>
             </div>
           </div>
 
