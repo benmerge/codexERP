@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Customer, Order, OrderItem, OrderStatus, Product } from '../types';
+import { Customer, Order, OrderItem, OrderStatus, OrgMember, Product } from '../types';
 import { Plus, Trash2 } from 'lucide-react';
 
 interface CreateOrderDialogProps {
@@ -13,13 +13,21 @@ interface CreateOrderDialogProps {
   onSave: (order: Order) => void;
   customers: Customer[];
   products: Product[];
+  salesReps: OrgMember[];
 }
 
-export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOpenChange, onSave, customers, products }) => {
+export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOpenChange, onSave, customers, products, salesReps }) => {
   const [customerId, setCustomerId] = useState('');
   const [items, setItems] = useState<OrderItem[]>([{ productId: '', quantity: 1 }]);
   const [status, setStatus] = useState<OrderStatus>('Order placed');
+  const [salesRepId, setSalesRepId] = useState('');
   const selectedCustomer = customers.find((entry) => entry.id === customerId);
+
+  const handleCustomerChange = (value: string) => {
+    setCustomerId(value);
+    const nextCustomer = customers.find((entry) => entry.id === value);
+    setSalesRepId(nextCustomer?.salesRepId || salesReps[0]?.id || '');
+  };
 
   const handleAddItem = () => {
     setItems([...items, { productId: '', quantity: 1 }]);
@@ -39,18 +47,20 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
     e.preventDefault();
     if (!customerId || items.length === 0 || items.some(i => !i.productId)) return;
 
+    // Calculate total amount if products have prices
     const totalAmount = items.reduce((sum, item) => {
       const product = products.find(p => p.id === item.productId);
       return sum + (product?.price || 0) * item.quantity;
     }, 0);
 
     const customer = customers.find((entry) => entry.id === customerId);
+    const selectedSalesRep = salesReps.find((rep) => rep.id === salesRepId) || salesReps.find((rep) => rep.id === customer?.salesRepId);
     const newOrder: Order = {
       id: `ORD-${Date.now().toString().slice(-6)}`,
       customerId,
-      salesRepId: customer?.salesRepId,
-      salesRepName: customer?.salesRepName,
-      salesRepEmail: customer?.salesRepEmail,
+      salesRepId: selectedSalesRep?.id || customer?.salesRepId,
+      salesRepName: selectedSalesRep?.displayName || selectedSalesRep?.email || customer?.salesRepName,
+      salesRepEmail: selectedSalesRep?.email || customer?.salesRepEmail,
       date: new Date().toISOString().split('T')[0],
       status,
       items: items.map(i => ({ ...i, price: products.find(p => p.id === i.productId)?.price })),
@@ -76,7 +86,7 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
           <div className="grid gap-4 md:grid-cols-[1.35fr_0.85fr]">
             <div className="space-y-2">
               <Label>Customer</Label>
-              <Select value={customerId} onValueChange={setCustomerId} required>
+              <Select value={customerId} onValueChange={handleCustomerChange} required>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a customer" />
                 </SelectTrigger>
@@ -106,6 +116,27 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
                   <SelectItem value="Cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
+            <div className="space-y-2">
+              <Label>Account Rep</Label>
+              <Select value={salesRepId} onValueChange={setSalesRepId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a rep" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesReps.map((rep) => (
+                    <SelectItem key={rep.id} value={rep.id}>
+                      {rep.displayName || rep.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Select the rep who owns this account so status updates go to the right person.
+              </p>
             </div>
           </div>
 
