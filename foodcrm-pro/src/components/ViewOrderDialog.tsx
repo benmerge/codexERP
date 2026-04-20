@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Order, OrderStatus, Customer, Product } from '../types';
+import { Order, OrderStatus, Customer, Product, OrgMember } from '../types';
+import { useAppContext } from '../data/AppContext';
 
 interface ViewOrderDialogProps {
   order: Order | null;
@@ -12,21 +13,33 @@ interface ViewOrderDialogProps {
   onSave: (order: Order) => void;
   customers: Customer[];
   products: Product[];
+  salesReps: OrgMember[];
 }
 
-export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, onOpenChange, onSave, customers, products }) => {
+export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, onOpenChange, onSave, customers, products, salesReps }) => {
+  const { updateCustomer } = useAppContext();
   const [status, setStatus] = useState<OrderStatus>('Order placed');
+  const [salesRepId, setSalesRepId] = useState('');
 
   useEffect(() => {
     if (order) {
       setStatus(order.status);
+      setSalesRepId(order.salesRepId || '');
     }
   }, [order]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (order) {
-      const updatedOrder = { ...order, status };
+      const customer = customers.find((entry) => entry.id === order.customerId);
+      const salesRep = salesReps.find((rep) => rep.id === salesRepId);
+      const updatedOrder = {
+        ...order,
+        status,
+        salesRepId: customer?.salesRepId || salesRepId,
+        salesRepName: customer?.salesRepName || salesRep?.displayName || salesRep?.email || order.salesRepName,
+        salesRepEmail: customer?.salesRepEmail || salesRep?.email || order.salesRepEmail,
+      };
       
       // Shipped/Delivered/Cancelled should all carry a completion timestamp for downstream MRP visibility.
       if ((status === 'Shipped' || status === 'Delivered' || status === 'Cancelled') && order.status !== status) {
@@ -35,26 +48,16 @@ export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, o
         updatedOrder.fulfilledDate = undefined;
       }
       
-      onSave(updatedOrder);
-
-      // Trigger email if status changed and customer has email
-      const customer = customers.find(c => c.id === order.customerId);
-      if (customer?.email && status !== order.status) {
-        try {
-          await fetch('/api/email/order-status', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: customer.email,
-              customerName: customer.name,
-              orderId: order.id,
-              status: status
-            })
-          });
-        } catch (error) {
-          console.error('Failed to send status email', error);
-        }
+      if (customer && salesRepId && customer.salesRepId !== salesRepId) {
+        updateCustomer({
+          ...customer,
+          salesRepId,
+          salesRepName: salesRep?.displayName || salesRep?.email || customer.salesRepName,
+          salesRepEmail: salesRep?.email || customer.salesRepEmail,
+        });
       }
+
+      onSave(updatedOrder);
 
       onOpenChange(false);
     }
@@ -84,6 +87,10 @@ export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, o
               <span className="font-semibold text-slate-500 block">Source</span>
               <span>{order.source || 'Manual'}</span>
             </div>
+            <div>
+              <span className="font-semibold text-slate-500 block">Sales Rep</span>
+              <span>{order.salesRepName || order.salesRepEmail || 'Unassigned'}</span>
+            </div>
           </div>
 
           <div className="pt-2">
@@ -106,6 +113,21 @@ export const ViewOrderDialog: React.FC<ViewOrderDialogProps> = ({ order, open, o
           </div>
           
           <form onSubmit={handleSubmit} className="space-y-4 border-t pt-4">
+            <div className="space-y-2">
+              <Label>Account Rep</Label>
+              <Select value={salesRepId} onValueChange={setSalesRepId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a sales rep" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesReps.map((rep) => (
+                    <SelectItem key={rep.id} value={rep.id}>
+                      {rep.displayName || rep.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label>Update Status</Label>
               <Select value={status} onValueChange={(v: OrderStatus) => setStatus(v)}>
