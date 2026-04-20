@@ -134,10 +134,6 @@ export const Dashboard = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <LayoutDashboard className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Custom Workspace</h2>
-          </div>
           <p className="text-sm text-slate-500 italic serif">Tailored overview of your ecosystem operations and infrastructure.</p>
         </div>
         
