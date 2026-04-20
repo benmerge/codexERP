@@ -17,10 +17,12 @@ interface EditCustomerDialogProps {
 }
 
 export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer, open, onOpenChange, onSave }) => {
+  const { addTask, deleteCustomer, salesReps } = useAppContext();
   const [name, setName] = useState('');
   const [company, setCompany] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [salesRepId, setSalesRepId] = useState('');
   const [category, setCategory] = useState<CustomerCategory>('Retail');
   const [monthlySalesVolume, setMonthlySalesVolume] = useState<number | ''>('');
   const [notes, setNotes] = useState<Note[]>([]);
@@ -28,7 +30,6 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
   const [alsoCreateTask, setAlsoCreateTask] = useState(false);
   const [taskDueDate, setTaskDueDate] = useState('');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const { addTask, deleteCustomer } = useAppContext();
   
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -41,6 +42,7 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
       setCompany(customer.company || '');
       setEmail(customer.email || '');
       setPhone(customer.phone || '');
+      setSalesRepId(customer.salesRepId || '');
       setCategory(customer.category || 'Retail');
       setMonthlySalesVolume(customer.monthlySalesVolume || '');
       setNotes(customer.notes || []);
@@ -176,12 +178,16 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (customer) {
+      const salesRep = salesReps.find((rep) => rep.id === salesRepId);
       onSave({
         ...customer,
         name,
         company,
         email,
         phone,
+        salesRepId,
+        salesRepName: salesRep?.displayName || salesRep?.email,
+        salesRepEmail: salesRep?.email,
         category,
         monthlySalesVolume: monthlySalesVolume === '' ? undefined : Number(monthlySalesVolume),
         notes
@@ -212,6 +218,21 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
             <div className="space-y-2">
               <Label htmlFor="edit-phone">Phone</Label>
               <Input id="edit-phone" value={phone} onChange={e => setPhone(e.target.value)} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Account Rep</Label>
+              <Select value={salesRepId} onValueChange={setSalesRepId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a rep" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesReps.map((rep) => (
+                    <SelectItem key={rep.id} value={rep.id}>
+                      {rep.displayName || rep.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Category</Label>
