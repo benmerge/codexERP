@@ -22,6 +22,26 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
   const [status, setStatus] = useState<OrderStatus>('Order placed');
   const [salesRepId, setSalesRepId] = useState('');
   const selectedCustomer = customers.find((entry) => entry.id === customerId);
+  const selectedSalesRep = salesReps.find((rep) => rep.id === salesRepId);
+  const customerRepLabel = selectedCustomer?.salesRepName || selectedCustomer?.salesRepEmail || 'Assigned rep';
+  const salesRepLabelFor = (repId: string) => {
+    const rep = salesReps.find((entry) => entry.id === repId);
+    if (rep) return rep.displayName || rep.email || 'Assigned rep';
+    if (selectedCustomer?.salesRepId === repId) return selectedCustomer?.salesRepName || selectedCustomer?.salesRepEmail || 'Assigned rep';
+    return 'Assigned rep';
+  };
+  const salesRepOptions = React.useMemo(() => {
+    if (!selectedCustomer?.salesRepId) return salesReps;
+    if (salesReps.some((rep) => rep.id === selectedCustomer.salesRepId)) return salesReps;
+    return [
+      {
+        id: selectedCustomer.salesRepId,
+        email: selectedCustomer.salesRepEmail || selectedCustomer.salesRepName || '',
+        displayName: selectedCustomer.salesRepName || selectedCustomer.salesRepEmail || 'Assigned rep',
+      },
+      ...salesReps,
+    ];
+  }, [salesReps, selectedCustomer]);
 
   const handleCustomerChange = (value: string) => {
     setCustomerId(value);
@@ -54,13 +74,22 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
     }, 0);
 
     const customer = customers.find((entry) => entry.id === customerId);
-    const selectedSalesRep = salesReps.find((rep) => rep.id === salesRepId) || salesReps.find((rep) => rep.id === customer?.salesRepId);
+    const resolvedSalesRep =
+      selectedSalesRep ||
+      salesReps.find((rep) => rep.id === customer?.salesRepId) ||
+      (customer?.salesRepId
+        ? {
+            id: customer.salesRepId,
+            email: customer.salesRepEmail || customer.salesRepName || '',
+            displayName: customer.salesRepName || customer.salesRepEmail || 'Assigned rep',
+          }
+        : undefined);
     const newOrder: Order = {
       id: `ORD-${Date.now().toString().slice(-6)}`,
       customerId,
-      salesRepId: selectedSalesRep?.id || customer?.salesRepId,
-      salesRepName: selectedSalesRep?.displayName || selectedSalesRep?.email || customer?.salesRepName,
-      salesRepEmail: selectedSalesRep?.email || customer?.salesRepEmail,
+      salesRepId: resolvedSalesRep?.id || customer?.salesRepId,
+      salesRepName: resolvedSalesRep?.displayName || resolvedSalesRep?.email || customer?.salesRepName,
+      salesRepEmail: resolvedSalesRep?.email || customer?.salesRepEmail,
       date: new Date().toISOString().split('T')[0],
       status,
       items: items.map(i => ({ ...i, price: products.find(p => p.id === i.productId)?.price })),
@@ -99,7 +128,7 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                Account rep: {selectedCustomer?.salesRepName || selectedCustomer?.salesRepEmail || 'Assign one on the customer/prospect record first'}
+                Account rep: {customerRepLabel}
               </p>
             </div>
 
@@ -127,9 +156,9 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
                   <SelectValue placeholder="Select a rep" />
                 </SelectTrigger>
                 <SelectContent>
-                  {salesReps.map((rep) => (
+                  {salesRepOptions.map((rep) => (
                     <SelectItem key={rep.id} value={rep.id}>
-                      {rep.displayName || rep.email}
+                      {rep.displayName || rep.email || salesRepLabelFor(rep.id)}
                     </SelectItem>
                   ))}
                 </SelectContent>
