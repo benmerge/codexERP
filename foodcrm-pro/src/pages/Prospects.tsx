@@ -14,6 +14,7 @@ import { EditCustomerDialog } from '../components/EditCustomerDialog';
 
 export const Prospects = () => {
   const { customers, salesReps, addCustomer, addCustomers, updateCustomer, user } = useAppContext();
+  const safeSalesReps = Array.isArray(salesReps) ? salesReps : [];
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -26,11 +27,20 @@ export const Prospects = () => {
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState<CustomerCategory>('Retail');
   const [salesRepId, setSalesRepId] = useState('');
-  const defaultRep = salesReps.find((rep) => rep.id === user?.uid);
+  const repLabel = (rep: { id: string; displayName?: string; email?: string }) =>
+    rep.displayName?.trim() ||
+    rep.email?.trim() ||
+    (rep.id === user?.uid ? user?.displayName || user?.email || 'Assigned rep' : 'Assigned rep');
+  const defaultRep = safeSalesReps.find((rep) => rep.id === user?.uid);
+  const normalizeStage = (prospect: Customer, nextStage: PipelineStage): Customer => ({
+    ...prospect,
+    pipelineStage: nextStage,
+    isProspect: nextStage !== 'Closed Won' && nextStage !== 'Closed Lost',
+  });
 
   const handleAddProspect = (e: React.FormEvent) => {
     e.preventDefault();
-    const salesRep = salesReps.find((rep) => rep.id === salesRepId) || salesReps.find((rep) => rep.id === user?.uid);
+    const salesRep = safeSalesReps.find((rep) => rep.id === salesRepId) || safeSalesReps.find((rep) => rep.id === user?.uid);
     addCustomer({
       id: `c${Date.now()}`,
       name,
@@ -188,9 +198,9 @@ export const Prospects = () => {
                     <SelectValue placeholder="Select a rep" />
                   </SelectTrigger>
                   <SelectContent>
-                    {salesReps.map((rep) => (
+                    {safeSalesReps.map((rep) => (
                       <SelectItem key={rep.id} value={rep.id}>
-                        {rep.displayName || rep.email}
+                        {repLabel(rep)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -270,7 +280,7 @@ export const Prospects = () => {
                         <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={prospect.pipelineStage}
-                            onValueChange={(val: PipelineStage) => updateCustomer({ ...prospect, pipelineStage: val })}
+                            onValueChange={(val: PipelineStage) => updateCustomer(normalizeStage(prospect, val))}
                           >
                             <SelectTrigger className="h-8 w-[140px] border-slate-200">
                               <SelectValue />
