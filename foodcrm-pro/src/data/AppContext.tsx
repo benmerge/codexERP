@@ -89,6 +89,35 @@ const resolveOrgId = (currentUser: User | null) => {
   return `org_${sanitizeSegment(currentUser.uid)}`;
 };
 
+const humanizeRepLabel = (value: string) =>
+  value
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const normalizeSalesRep = (member: OrgMember, fallbackUser?: User | null): OrgMember => {
+  const email = member.email || (member.id.includes('@') ? member.id : '');
+  const displayName =
+    member.displayName ||
+    fallbackUser?.displayName ||
+    fallbackUser?.email ||
+    email ||
+    humanizeRepLabel(member.id) ||
+    'Assigned rep';
+
+  return {
+    ...member,
+    email,
+    displayName,
+  };
+};
+
+const normalizeCustomerStatus = (customer: Customer): Customer => ({
+  ...customer,
+  isProspect: customer.pipelineStage !== 'Closed Won',
+});
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -280,8 +309,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const unsubscribeTeam = onSnapshot(teamRef, (snapshot) => {
       const loadedMembers: OrgMember[] = [];
       snapshot.forEach((entry) => {
-        loadedMembers.push({ ...entry.data(), id: entry.id } as OrgMember);
+        loadedMembers.push(normalizeSalesRep({ ...entry.data(), id: entry.id } as OrgMember, user));
       });
+      if (user) {
+        const currentUserMember = normalizeSalesRep({
+          id: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || user.email || 'Assigned rep',
+          orgId: dataId,
+          role: 'user',
+        }, user);
+        if (!loadedMembers.some((member) => member.id === currentUserMember.id)) {
+          loadedMembers.unshift(currentUserMember);
+        }
+      }
       loadedMembers.sort((left, right) => {
         const leftLabel = left.displayName || left.email;
         const rightLabel = right.displayName || right.email;
@@ -421,7 +462,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addCustomer = async (customer: Customer) => {
     const dataId = getDataId(user);
     if (!dataId) return;
-    const customerWithUid = removeUndefined({ ...customer, uid: dataId });
+    const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
     try {
       await setDoc(doc(db, `users/${dataId}/customers`, customer.id), customerWithUid);
     } catch (err) {
@@ -434,7 +475,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     try {
       for (const customer of newCustomers) {
-        const customerWithUid = removeUndefined({ ...customer, uid: dataId });
+        const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
         await setDoc(doc(db, `users/${dataId}/customers`, customer.id), customerWithUid);
       }
     } catch (err) {
@@ -445,7 +486,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateCustomer = async (customer: Customer) => {
     const dataId = getDataId(user);
     if (!dataId) return;
-    const customerWithUid = removeUndefined({ ...customer, uid: dataId });
+    const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
     try {
       await setDoc(doc(db, `users/${dataId}/customers`, customer.id), customerWithUid);
     } catch (err) {
@@ -664,7 +705,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         <div className="text-[10px] text-slate-400 mt-8 px-6 text-center">
           Mobile browsers may block login cookies in the preview window. 
           <br />
-          If stuck, try opening the <strong>Shared App URL</strong> directly.
+          If stuck, try opening the <strong>app URL</strong> directly.
         </div>
       </div>
     );
@@ -680,7 +721,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Sign In Required</h1>
-          <p className="text-slate-500">Please sign in to access your CRM data.</p>
+          <p className="text-slate-500">Please sign in to access your workspace.</p>
           
           {emailAuthMode === 'none' ? (
             <div className="space-y-4">
