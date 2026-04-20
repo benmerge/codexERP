@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { useAppContext } from '../data/AppContext';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, UploadCloud } from 'lucide-react';
@@ -14,7 +13,7 @@ import Papa from 'papaparse';
 import { EditCustomerDialog } from '../components/EditCustomerDialog';
 
 export const Prospects = () => {
-  const { customers, addCustomer, addCustomers, updateCustomer } = useAppContext();
+  const { customers, salesReps, addCustomer, addCustomers, updateCustomer, user } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -26,15 +25,21 @@ export const Prospects = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState<CustomerCategory>('Retail');
+  const [salesRepId, setSalesRepId] = useState('');
+  const defaultRep = salesReps.find((rep) => rep.id === user?.uid);
 
   const handleAddProspect = (e: React.FormEvent) => {
     e.preventDefault();
+    const salesRep = salesReps.find((rep) => rep.id === salesRepId) || salesReps.find((rep) => rep.id === user?.uid);
     addCustomer({
       id: `c${Date.now()}`,
       name,
       company,
       email,
       phone,
+      salesRepId: salesRep?.id,
+      salesRepName: salesRep?.displayName || salesRep?.email,
+      salesRepEmail: salesRep?.email,
       isProspect: true,
       category,
       pipelineStage: 'Lead',
@@ -48,6 +53,7 @@ export const Prospects = () => {
     setEmail('');
     setPhone('');
     setCategory('Retail');
+    setSalesRepId(user?.uid || '');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,6 +81,9 @@ export const Prospects = () => {
             company: companyName,
             email: '',
             phone: '',
+            salesRepId: defaultRep?.id,
+            salesRepName: defaultRep?.displayName || defaultRep?.email,
+            salesRepEmail: defaultRep?.email,
             isProspect: true,
             category: 'Retail',
             pipelineStage: 'Lead',
@@ -105,17 +114,6 @@ export const Prospects = () => {
     (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.company.toLowerCase().includes(searchTerm.toLowerCase()))
   );
-
-  const getStatusColor = (status: string) => {
-    switch(status) {
-      case 'Lead': return 'bg-slate-100 text-slate-800';
-      case 'Contacted': return 'bg-blue-100 text-blue-800';
-      case 'Qualified': return 'bg-indigo-100 text-indigo-800';
-      case 'Proposal': return 'bg-amber-100 text-amber-800';
-      case 'Negotiation': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-slate-100 text-slate-800';
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -183,6 +181,21 @@ export const Prospects = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Account Rep</Label>
+                <Select value={salesRepId} onValueChange={setSalesRepId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a rep" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {salesReps.map((rep) => (
+                      <SelectItem key={rep.id} value={rep.id}>
+                        {rep.displayName || rep.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex justify-end pt-4">
                 <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">
                   Save Prospect
@@ -217,16 +230,16 @@ export const Prospects = () => {
                   <TableHead className="w-[20%]">Company</TableHead>
                   <TableHead className="w-[20%]">Contact Name</TableHead>
                   <TableHead className="w-[20%]">Contact Info</TableHead>
+                  <TableHead className="w-[12%]">Rep</TableHead>
                   <TableHead className="w-[10%]">Category</TableHead>
-                  <TableHead className="w-[10%]">Stage</TableHead>
-                  <TableHead className="w-[10%] text-right">Last Contact</TableHead>
-                  <TableHead className="w-[10%] text-right">Action</TableHead>
+                  <TableHead className="w-[12%]">Stage</TableHead>
+                  <TableHead className="w-[12%] text-right">Last Contact</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredProspects.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-slate-500">
+                    <TableCell colSpan={7} className="h-24 text-center text-slate-500">
                       No prospects found.
                     </TableCell>
                   </TableRow>
@@ -251,30 +264,28 @@ export const Prospects = () => {
                           ) : null}
                         </div>
                       </TableCell>
+                      <TableCell>{prospect.salesRepName || prospect.salesRepEmail || 'Unassigned'}</TableCell>
                       <TableCell>{prospect.category}</TableCell>
                       <TableCell>
-                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-1 block md:hidden">
-                          {prospect.pipelineStage}
+                        <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+                          <Select
+                            value={prospect.pipelineStage}
+                            onValueChange={(val: PipelineStage) => updateCustomer({ ...prospect, pipelineStage: val })}
+                          >
+                            <SelectTrigger className="h-8 w-[140px] border-slate-200">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Lead">Lead</SelectItem>
+                              <SelectItem value="Contacted">Contacted</SelectItem>
+                              <SelectItem value="Proposal">Proposal</SelectItem>
+                              <SelectItem value="Closed Won">Closed Won</SelectItem>
+                              <SelectItem value="Closed Lost">Closed Lost</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </TableCell>
                       <TableCell className="text-right text-slate-500">{prospect.lastContact}</TableCell>
-                      <TableCell className="text-right flex justify-end" onClick={(e) => e.stopPropagation()}>
-                        <Select 
-                          value={prospect.pipelineStage} 
-                          onValueChange={(val: PipelineStage) => updateCustomer({...prospect, pipelineStage: val})}
-                        >
-                          <SelectTrigger className="h-8 w-[130px] border-slate-200">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Lead">Lead</SelectItem>
-                            <SelectItem value="Contacted">Contacted</SelectItem>
-                            <SelectItem value="Proposal">Proposal</SelectItem>
-                            <SelectItem value="Closed Won">Closed Won</SelectItem>
-                            <SelectItem value="Closed Lost">Closed Lost</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
                     </TableRow>
                   ))
                 )}
