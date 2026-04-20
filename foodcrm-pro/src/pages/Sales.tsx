@@ -11,7 +11,7 @@ import { ViewOrderDialog } from '../components/ViewOrderDialog';
 import { Order } from '../types';
 
 export const Sales = () => {
-  const { orders, customers, products, addOrder, updateOrder, updateCustomer } = useAppContext();
+  const { orders, customers, products, salesReps, addOrder, updateOrder, updateCustomer } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
@@ -92,8 +92,9 @@ export const Sales = () => {
                   <TableHead className="w-[12%] py-4">Order ID</TableHead>
                   <TableHead className="w-[20%] py-4">Customer</TableHead>
                   <TableHead className="w-[12%] py-4">Date</TableHead>
+                  <TableHead className="w-[14%] py-4">Sales Rep</TableHead>
                   <TableHead className="w-[10%] py-4 text-right">Volume</TableHead>
-                  <TableHead className="w-[28%] py-4">Product Details</TableHead>
+                  <TableHead className="w-[24%] py-4">Product Details</TableHead>
                   <TableHead className="w-[10%] py-4">Status</TableHead>
                   <TableHead className="w-[8%] py-4 text-right">Actions</TableHead>
                 </TableRow>
@@ -101,7 +102,7 @@ export const Sales = () => {
               <TableBody>
                 {filteredOrders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-slate-500">
+                    <TableCell colSpan={8} className="h-24 text-center text-slate-500">
                       No orders found.
                     </TableCell>
                   </TableRow>
@@ -122,6 +123,10 @@ export const Sales = () => {
                           <div className="text-xs text-slate-500">{customer?.company ? customer?.name : ''}</div>
                         </TableCell>
                         <TableCell>{order.date}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{order.salesRepName || order.salesRepEmail || 'Unassigned'}</div>
+                          <div className="text-xs text-slate-500">{order.salesRepEmail || ''}</div>
+                        </TableCell>
                         <TableCell className="text-right font-black text-slate-900 tabular-nums">
                           {itemCount}
                           <span className="text-[9px] ml-1 text-slate-400 font-bold uppercase tracking-widest block sm:inline">Units</span>
@@ -169,6 +174,7 @@ export const Sales = () => {
         onSave={handleAddOrder} 
         customers={customers} 
         products={products}
+        salesReps={salesReps}
       />
 
       <ViewOrderDialog
@@ -178,6 +184,7 @@ export const Sales = () => {
         onSave={updateOrder}
         customers={customers}
         products={products}
+        salesReps={salesReps}
       />
     </div>
   );
