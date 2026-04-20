@@ -35,6 +35,18 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const salesRepOptions = React.useMemo(() => {
+    if (!customer?.salesRepId) return salesReps;
+    if (salesReps.some((rep) => rep.id === customer.salesRepId)) return salesReps;
+    return [
+      {
+        id: customer.salesRepId,
+        email: customer.salesRepEmail || customer.salesRepName || '',
+        displayName: customer.salesRepName || customer.salesRepEmail || 'Assigned rep',
+      },
+      ...salesReps,
+    ];
+  }, [salesReps, customer]);
 
   useEffect(() => {
     if (customer) {
@@ -186,7 +198,7 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
         email,
         phone,
         salesRepId,
-        salesRepName: salesRep?.displayName || salesRep?.email,
+        salesRepName: salesRep?.displayName || salesRep?.email || 'Assigned rep',
         salesRepEmail: salesRep?.email,
         category,
         monthlySalesVolume: monthlySalesVolume === '' ? undefined : Number(monthlySalesVolume),
@@ -226,9 +238,9 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
                   <SelectValue placeholder="Select a rep" />
                 </SelectTrigger>
                 <SelectContent>
-                  {salesReps.map((rep) => (
+                  {salesRepOptions.map((rep) => (
                     <SelectItem key={rep.id} value={rep.id}>
-                      {rep.displayName || rep.email}
+                      {rep.displayName || rep.email || 'Assigned rep'}
                     </SelectItem>
                   ))}
                 </SelectContent>
