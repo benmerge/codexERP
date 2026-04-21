@@ -96,11 +96,19 @@ export function Dashboard({ locationId }: { locationId: string }) {
 
     // CRM Orders listener
     setSyncingOrders(true);
-    const unsubOrders = crmService.subscribeToOpenOrders((newOrders) => {
-      setOrders(newOrders);
-      setSyncingOrders(false);
-      setOrdersReady(true);
-    });
+    const unsubOrders = crmService.subscribeToOpenOrders(
+      (newOrders) => {
+        setOrders(newOrders);
+        setSyncingOrders(false);
+        setOrdersReady(true);
+      },
+      (err) => {
+        console.error(err);
+        setSyncingOrders(false);
+        setStatus((existing) => existing ?? { type: 'error', msg: 'CRM order sync is unavailable right now.' });
+        setOrdersReady(true);
+      }
+    );
 
     const ordersSafetyTimer = window.setTimeout(() => {
       setOrdersReady((current) => {

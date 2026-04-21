@@ -155,7 +155,10 @@ export const crmService = {
   /**
    * Real-time subscription to open orders
    */
-  subscribeToOpenOrders(callback: (orders: CRMOrder[]) => void) {
+  subscribeToOpenOrders(
+    callback: (orders: CRMOrder[]) => void,
+    onError?: (error: unknown) => void
+  ) {
     const auth = getAuth();
     if (!auth.currentUser) {
       callback([]);
@@ -175,6 +178,8 @@ export const crmService = {
       callback(orders);
     }, (err) => {
       console.error('CRM Subscription Error:', err);
+      onError?.(err);
+      callback([]);
     });
   },
   /**
