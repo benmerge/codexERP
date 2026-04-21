@@ -4,8 +4,7 @@ Add these secrets before enabling the deploy workflows.
 
 ## GitHub Actions: `deploy-foodcrm-pro.yml`
 
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`
-- `GCP_SERVICE_ACCOUNT`
+- `GCP_SA_KEY`
 - `GCP_REGION`
 - `GCP_PROJECT_ID`
 
