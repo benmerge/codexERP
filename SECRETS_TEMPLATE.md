@@ -11,7 +11,8 @@ Add these secrets before enabling the deploy workflows.
 ## GitHub Actions: `deploy-miremix-mrp.yml`
 
 - `FIREBASE_SERVICE_ACCOUNT`
-- `FIREBASE_PROJECT_ID`
+
+`FIREBASE_PROJECT_ID` is no longer required for the MRP deploy workflow because the project id is hardcoded to `gen-lang-client-0021754998`.
 
 ## App Runtime Secrets
 
