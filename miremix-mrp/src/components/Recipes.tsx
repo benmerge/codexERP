@@ -158,6 +158,8 @@ export function Recipes({ locationId }: { locationId: string }) {
       setInventory(items);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'inventory');
+      setInventory([]);
+      setLoading(false);
     });
 
     const qRec = query(collection(db, 'recipes'));

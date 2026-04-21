@@ -60,6 +60,8 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       setInventory(items);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'inventory');
+      setInventory([]);
+      setLoading(false);
     });
 
     const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
