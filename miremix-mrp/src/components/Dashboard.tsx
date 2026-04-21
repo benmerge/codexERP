@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ShoppingBag, AlertTriangle, ExternalLink, Scale, History, Loader2, CheckCircle2, TrendingUp, Package } from 'lucide-react';
 import { collection, onSnapshot, query, where, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { crmService, type CRMOrder } from '../services/crmService';
 import { type Ingredient, type Recipe } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { normalizeIngredient } from '../lib/inventoryCategories';
 
 interface BatchLog {
   id: string;
@@ -21,6 +22,8 @@ export function Dashboard({ locationId }: { locationId: string }) {
   const [loading, setLoading] = useState(true);
   const [syncingOrders, setSyncingOrders] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+  const queueRef = useRef<HTMLDivElement | null>(null);
+  const alertsRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!locationId) return;
@@ -28,7 +31,22 @@ export function Dashboard({ locationId }: { locationId: string }) {
     // Inventory listener
     const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      items = items.map(normalizeIngredient);
+      if (locationId === 'all') {
+        const grouped = new Map<string, Ingredient>();
+        items.forEach((item) => {
+          const key = `${item.name}__${item.category}__${item.unit}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.quantityOnHand += item.quantityOnHand || 0;
+          } else {
+            grouped.set(key, { ...item, id: key, locationId: 'all' });
+          }
+        });
+        items = Array.from(grouped.values());
+      } else {
+        items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      }
       setInventory(items);
       setLoading(false);
     }, (err) => {
@@ -38,14 +56,22 @@ export function Dashboard({ locationId }: { locationId: string }) {
     // Recipes listener (for most used ingredient calculation)
     const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Recipe[];
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      items = items.filter((i) =>
+        locationId === 'all'
+          ? true
+          : i.locationId === locationId || !i.locationId || (!i.locationId && locationId === 'default')
+      );
       setRecipes(items);
     });
 
     // Logs listener for usage metrics
     const unsubLogs = onSnapshot(query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(150)), (snapshot) => {
       let logItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
-      logItems = logItems.filter(l => l.locationId === locationId || (!l.locationId && locationId === 'default'));
+      logItems = logItems.filter((l) =>
+        locationId === 'all'
+          ? true
+          : l.locationId === locationId || (!l.locationId && locationId === 'default')
+      );
       // enforce manual slice to 50 max
       setLogs(logItems.slice(0, 50));
     });
@@ -78,12 +104,12 @@ export function Dashboard({ locationId }: { locationId: string }) {
 
   // 1. Low Inventory Alerts (below 20kg for Majors, 5kg for Minors)
   const lowStockItems = inventory.filter(i => 
-    (i.category === 'Major' && i.quantityOnHand < 20) || 
-    (i.category === 'Minor' && i.quantityOnHand < 5)
+    (i.category === 'Major Ingredient' && i.quantityOnHand < 20) || 
+    (i.category === 'Minor Ingredient' && i.quantityOnHand < 5)
   );
 
   // 2. Finished Goods On Hand
-  const finishedGoods = inventory.filter(i => i.category === 'Finished');
+  const finishedGoods = inventory.filter(i => i.category === 'Finished Good');
 
   // 3. Simple most used ingredients calculation based on recent logs
   const usageMap: Record<string, number> = {};
@@ -91,7 +117,8 @@ export function Dashboard({ locationId }: { locationId: string }) {
     const recipe = recipes.find(r => r.name === log.recipeName);
     if (recipe) {
       recipe.ingredients.forEach(ing => {
-        usageMap[ing.ingredientId] = (usageMap[ing.ingredientId] || 0) + (ing.amount * log.multiplier);
+        const usageKey = ing.ingredientName || ing.ingredientId;
+        usageMap[usageKey] = (usageMap[usageKey] || 0) + (ing.amount * log.multiplier);
       });
     }
   });
@@ -99,8 +126,8 @@ export function Dashboard({ locationId }: { locationId: string }) {
   const topUsedIngredients = Object.entries(usageMap)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([id, amount]) => ({
-      ...inventory.find(i => i.id === id),
+    .map(([idOrName, amount]) => ({
+      ...inventory.find(i => i.category !== 'Finished Good' && (i.id === idOrName || i.name === idOrName)),
       usage: amount
     }))
     .filter(i => i.name);
@@ -117,10 +144,27 @@ export function Dashboard({ locationId }: { locationId: string }) {
   return (
     <div className="w-full space-y-8 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-zinc-200 pb-6">
+      <div className="flex flex-col gap-4 rounded-[2rem] border border-white/70 bg-white/70 px-6 py-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.32)] backdrop-blur xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Production Dashboard</h2>
-          <p className="text-[13px] text-zinc-500 mt-1">Real-time fulfillment & inventory status</p>
+          <div className="mrp-panel-label">Today&apos;s Control Board</div>
+          <h2 className="mt-2 font-display text-3xl font-bold text-zinc-900 tracking-tight">Production Dashboard</h2>
+          <p className="mt-2 text-[13px] text-zinc-500">Real-time fulfillment, queue pressure, and inventory status in one view.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-700 transition-colors hover:bg-emerald-100"
+          >
+            {orders.length} Open Orders
+          </button>
+          <button
+            type="button"
+            onClick={() => alertsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-600 transition-colors hover:bg-zinc-100"
+          >
+            {lowStockItems.length} Stock Alerts
+          </button>
         </div>
       </div>
 
@@ -135,7 +179,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Open CRM Orders */}
-        <div className="lg:col-span-8 space-y-6">
+        <div ref={queueRef} className="lg:col-span-8 space-y-6">
           <div className="flex items-center justify-between px-1">
             <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
               <ShoppingBag className="h-3.5 w-3.5" /> Pending Queue
@@ -150,11 +194,11 @@ export function Dashboard({ locationId }: { locationId: string }) {
               </div>
             ) : (
               orders.map(order => (
-                <div key={order.id} className="technical-card p-6 flex flex-col md:flex-row md:items-center gap-8 group">
+                <div key={order.id} className="technical-card p-6 flex flex-col gap-8 border-l-4 border-l-amber-400 md:flex-row md:items-center group">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-                      <h4 className="text-[17px] font-bold text-zinc-900 leading-tight">{order.customerName}</h4>
+                      <h4 className="font-display text-[22px] font-bold text-zinc-900 leading-tight">{order.customerName}</h4>
                     </div>
                     <div className="flex items-center gap-4 text-[11px] text-zinc-400 font-mono">
                       <span>REF: {order.id}</span>
@@ -163,19 +207,23 @@ export function Dashboard({ locationId }: { locationId: string }) {
                     </div>
                   </div>
                   
-                  <div className="min-w-[200px] max-w-[300px]">
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2 tracking-wider">Inventory Requirements</p>
+                  <div className="min-w-[220px] max-w-[320px]">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2 tracking-wider">Production Loadout</p>
                     <p className="text-[12px] text-zinc-600 line-clamp-2 leading-relaxed">
                       {Array.isArray(order.items) 
-                        ? order.items.map((i: any) => `${i.quantity || 1}x ${i.name || i.productName}`).join(', ')
+                        ? order.items.map((i: any) => `${i.quantity || 1}x ${i.name || i.productName || i.sku || 'Item'}`).join(', ')
                         : order.items?.toString()}
                     </p>
                   </div>
 
-                  <div className="flex shrink-0">
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="hidden xl:flex flex-col rounded-2xl border border-zinc-200 bg-white/70 px-4 py-3 text-right">
+                      <span className="mrp-panel-label text-zinc-400">Status</span>
+                      <span className="mt-1 text-sm font-semibold text-zinc-700">Ready to ship</span>
+                    </div>
                     <button 
                       onClick={() => handleShipOrder(order.id, order.rawId)}
-                      className="bg-zinc-900 border border-zinc-800 hover:bg-black text-white px-8 py-3.5 rounded-lg text-[12px] font-bold transition-all shadow-lg shadow-zinc-200 active:translate-y-px"
+                      className="rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-black text-white px-8 py-3.5 text-[12px] font-bold tracking-[0.18em] uppercase transition-all shadow-lg shadow-zinc-200 active:translate-y-px"
                     >
                       MARK SHIPPED
                     </button>
@@ -190,7 +238,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
         <div className="lg:col-span-4 space-y-6">
           
           {/* Inventory Alerts */}
-          <section className="technical-card overflow-hidden">
+          <section ref={alertsRef} className="technical-card overflow-hidden">
             <div className="p-4 border-b border-zinc-100 bg-zinc-50/50">
               <h3 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 text-accent" /> Logistics Alerts

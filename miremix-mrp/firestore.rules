@@ -47,17 +47,42 @@ service cloud.firestore {
     }
 
     function isValidRecipe(data) {
-      return data.name is string && data.ingredients is list;
+      return data.name is string &&
+             data.ingredients is list &&
+             (!('finishedGoodId' in data) || data.finishedGoodId is string) &&
+             (!('finishedGoodName' in data) || data.finishedGoodName is string) &&
+             (!('locationId' in data) || data.locationId is string);
     }
 
     function isValidLog(data) {
       return data.recipeName is string && data.multiplier is number;
     }
 
+    function isValidLocation(data) {
+      return data.id is string &&
+             data.name is string &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string) &&
+             (!('deactivatedAt' in data) || data.deactivatedAt is string) &&
+             (!('isActive' in data) || data.isActive is bool);
+    }
+
     // Orders (from CRM)
     match /orders/{id} {
-      allow read: if isAuthenticated();
-      allow update: if isAuthenticated(); // Allow status updates locally
+      allow read: if is40CenturyGrain();
+      allow update: if is40CenturyGrain();
+    }
+
+    // Public branding for shared login and workspace chrome
+    match /settings/{id} {
+      allow read: if true;
+      allow create, update: if is40CenturyGrain();
+    }
+
+    // Locations
+    match /locations/{id} {
+      allow read: if is40CenturyGrain();
+      allow create, update: if is40CenturyGrain() && isValidLocation(request.resource.data);
     }
 
     // Default deny
@@ -67,7 +92,7 @@ service cloud.firestore {
 
     // Ingredients
     match /inventory/{id} {
-      allow read: if isAuthenticated();
+      allow read: if is40CenturyGrain();
       // Allow creation/modification for authorized staff
       allow create: if is40CenturyGrain() && isValidInventory(request.resource.data);
       allow update: if is40CenturyGrain() && isValidInventory(request.resource.data);
@@ -76,7 +101,7 @@ service cloud.firestore {
 
     // Recipes
     match /recipes/{id} {
-      allow read: if isAuthenticated();
+      allow read: if is40CenturyGrain();
       allow create: if is40CenturyGrain() && isValidRecipe(request.resource.data);
       allow update: if is40CenturyGrain() && isValidRecipe(request.resource.data);
       allow delete: if is40CenturyGrain();
@@ -84,7 +109,7 @@ service cloud.firestore {
 
     // Logs
     match /logs/{id} {
-      allow read: if isAuthenticated();
+      allow read: if is40CenturyGrain();
       allow create: if is40CenturyGrain() && isValidLog(request.resource.data);
     }
   }

@@ -5,7 +5,7 @@ import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload, Pencil } fr
 import { collection, onSnapshot, query, addDoc, deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { CATEGORY_ORDER, INGREDIENT_CATEGORIES, normalizeIngredient } from '../lib/inventoryCategories';
+import { CATEGORY_ORDER, INGREDIENT_CATEGORIES, normalizeIngredient, normalizeInventoryCategory } from '../lib/inventoryCategories';
 
 const MEASURE_UNITS: RecipeMeasureUnit[] = ['g', 'kg', 'ml'];
 const FORMULA_LINE_CATEGORIES: Array<Ingredient['category']> = INGREDIENT_CATEGORIES;
@@ -302,10 +302,13 @@ export function Recipes({ locationId }: { locationId: string }) {
       } as const;
     }
 
-    if (row.ingredientCategory && ingredient.category !== row.ingredientCategory) {
-      return {
-        error: `${row.ingredientName} (expected ${row.ingredientCategory}, found ${ingredient.category})`,
-      } as const;
+    if (row.ingredientCategory) {
+      const normalizedReqCategory = normalizeInventoryCategory(row.ingredientCategory, row.ingredientName);
+      if (ingredient.category !== normalizedReqCategory) {
+        return {
+          error: `${row.ingredientName} (expected ${normalizedReqCategory}, found ${ingredient.category})`,
+        } as const;
+      }
     }
 
     return {
@@ -704,8 +707,9 @@ export function Recipes({ locationId }: { locationId: string }) {
                 ) : (
                   draftIngredients.map((ri, index) => {
                     const categoryInventory = inventory.filter((item) => item.category === ri.ingredientCategory);
+                    const isInvalid = ri.ingredientId && !inventory.some(i => i.id === ri.ingredientId && i.category !== 'Finished Good');
                     return (
-                    <div key={`${ri.ingredientId || 'draft'}-${index}`} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-4 md:grid-cols-[0.8fr_1.2fr_0.5fr_0.35fr_auto] md:items-center">
+                    <div key={`${ri.ingredientId || 'draft'}-${index}`} className={`grid grid-cols-1 gap-3 rounded-xl border ${isInvalid ? 'border-red-300 bg-red-50/50' : 'border-zinc-200 bg-white'} p-4 md:grid-cols-[0.8fr_1.2fr_0.5fr_0.35fr_auto] md:items-center`}>
                       <select
                         className="w-full bg-zinc-50 border border-zinc-200 rounded px-3 py-2 text-[12px] font-bold uppercase focus:outline-none focus:ring-1 focus:ring-accent"
                         value={ri.ingredientCategory}
@@ -736,8 +740,9 @@ export function Recipes({ locationId }: { locationId: string }) {
                             </option>
                           ))}
                         </select>
-                        <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1">
+                        <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.18em] mt-1 flex items-center gap-2">
                           {ri.ingredientId ? getIngredientCategory(ri.ingredientId) : ri.ingredientCategory}
+                          {isInvalid && <span className="text-[9px] text-red-600 bg-red-100 px-1.5 py-0.5 rounded">INVALID REFERENCE</span>}
                         </div>
                       </div>
                       <input
@@ -823,14 +828,19 @@ export function Recipes({ locationId }: { locationId: string }) {
             <div className="space-y-2 mb-6">
               <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Bill Of Ingredients</p>
               <div className="max-h-[160px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                {recipe.ingredients.map((ri, idx) => (
+                {recipe.ingredients.map((ri, idx) => {
+                  const isInvalid = !inventory.some(i => i.id === ri.ingredientId && i.category !== 'Finished Good');
+                  return (
                   <div key={idx} className="flex justify-between text-[12px] py-1 border-b border-zinc-50 last:border-0 gap-3">
-                    <span className="text-zinc-600 truncate">{getIngredientName(ri.ingredientId, ri.ingredientName)}</span>
+                    <span className="text-zinc-600 truncate">
+                      {getIngredientName(ri.ingredientId, ri.ingredientName)}
+                      {isInvalid && <span className="ml-2 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded tracking-wider uppercase">Invalid</span>}
+                    </span>
                     <span className="font-mono font-bold text-zinc-900 shrink-0">
                       {ri.amount} <span className="text-[9px] text-zinc-400 uppercase font-sans">{ri.unit || 'g'}</span>
                     </span>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
 

@@ -4,7 +4,28 @@ import { CheckCircle2, AlertTriangle, Scale, ArrowRight, Loader2, History, Shopp
 import { collection, onSnapshot, query, addDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
+import { normalizeIngredient } from '../lib/inventoryCategories';
 import { crmService, type CRMOrder } from '../services/crmService';
+
+const convertMeasurement = (amount: number, fromUnit: string, toUnit: string) => {
+  const from = fromUnit.toLowerCase();
+  const to = toUnit.toLowerCase();
+
+  if (from === to) return amount;
+
+  const weightToGrams: Record<string, number> = { g: 1, kg: 1000 };
+  const volumeToMilliliters: Record<string, number> = { ml: 1, l: 1000 };
+
+  if (from in weightToGrams && to in weightToGrams) {
+    return (amount * weightToGrams[from]) / weightToGrams[to];
+  }
+
+  if (from in volumeToMilliliters && to in volumeToMilliliters) {
+    return (amount * volumeToMilliliters[from]) / volumeToMilliliters[to];
+  }
+
+  return amount;
+};
 
 export function BatchMixBuilder({ locationId }: { locationId: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -20,7 +41,22 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
 
     const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      items = items.map(normalizeIngredient);
+      if (locationId === 'all') {
+        const grouped = new Map<string, Ingredient>();
+        items.forEach((item) => {
+          const key = `${item.name}__${item.category}__${item.unit}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.quantityOnHand += item.quantityOnHand || 0;
+          } else {
+            grouped.set(key, { ...item, id: key, locationId: 'all' });
+          }
+        });
+        items = Array.from(grouped.values());
+      } else {
+        items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      }
       setInventory(items);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'inventory');
@@ -28,7 +64,11 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
 
     const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Recipe[];
-      items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+      items = items.filter((i) =>
+        locationId === 'all'
+          ? true
+          : i.locationId === locationId || !i.locationId || (!i.locationId && locationId === 'default')
+      );
       setRecipes(items);
       setLoading(false);
     }, (err) => {
@@ -40,30 +80,37 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
   }, [locationId]);
 
   const selectedRecipe = recipes.find(r => r.id === selectedRecipeId);
+  const selectedRecipeName = selectedRecipe?.finishedGoodName || selectedRecipe?.name || 'Selected recipe';
 
   const requirements = selectedRecipe ? selectedRecipe.ingredients.map(ing => {
-    const item = inventory.find(i => i.id === ing.ingredientId);
-    const requiredG = ing.amount * batchMultiplier;
-    const isGramsToKg = item?.unit === 'kg';
-    const requiredInInvUnit = isGramsToKg ? (requiredG / 1000) : requiredG;
+    const item = inventory.find(i => 
+      i.category !== 'Finished Good' && 
+      (i.id === ing.ingredientId || (!!ing.ingredientName && i.name === ing.ingredientName))
+    );
+    const recipeUnit = ing.unit || 'g';
+    const inventoryUnit = item?.unit || recipeUnit;
+    const requiredInInvUnit = convertMeasurement(ing.amount * batchMultiplier, recipeUnit, inventoryUnit);
     const onHand = item?.quantityOnHand || 0;
     const missing = Math.max(0, requiredInInvUnit - onHand);
     
     return {
       ingredientId: ing.ingredientId,
-      name: item?.name || 'Unknown',
-      unitInInv: item?.unit || 'kg',
-      requiredG,
+      inventoryDocId: item?.id,
+      name: item?.name || ing.ingredientName || 'Unknown',
+      recipeUnit,
+      unitInInv: inventoryUnit,
       requiredInInvUnit,
       onHand,
       missing,
+      isInvalid: !item,
     };
   }) : [];
 
-  const canFulfill = requirements.length > 0 && requirements.every(r => r.missing === 0);
+  const canFulfill = requirements.length > 0 && requirements.every(r => r.missing === 0 && !r.isInvalid);
+  const canCommitBatch = canFulfill && locationId !== 'all';
 
   const handleDeduct = async () => {
-    if (!canFulfill || !selectedRecipe) return;
+    if (!canCommitBatch || !selectedRecipe) return;
     setIsDeducting(true);
     setStatus(null);
 
@@ -72,7 +119,8 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       
       // Deduct Ingredients
       requirements.forEach(req => {
-        const docRef = doc(db, 'inventory', req.ingredientId);
+        if (!req.inventoryDocId) return;
+        const docRef = doc(db, 'inventory', req.inventoryDocId);
         batch.update(docRef, {
           quantityOnHand: Number((req.onHand - req.requiredInInvUnit).toFixed(4)),
           lastUpdated: new Date().toISOString()
@@ -80,7 +128,10 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       });
 
       // Increment Finished Good
-      const targetFinishedGood = inventory.find(i => i.category === 'Finished Good' && i.name === selectedRecipe.name);
+      const targetFinishedGood = inventory.find((i) =>
+        i.category === 'Finished Good' &&
+        (i.id === selectedRecipe.finishedGoodId || i.name === selectedRecipeName)
+      );
       if (targetFinishedGood && targetFinishedGood.id) {
         const fgRef = doc(db, 'inventory', targetFinishedGood.id);
         batch.update(fgRef, {
@@ -90,7 +141,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       }
 
       await addDoc(collection(db, 'logs'), {
-        recipeName: selectedRecipe.name,
+        recipeName: selectedRecipeName,
         multiplier: batchMultiplier,
         timestamp: new Date().toISOString(),
         locationId,
@@ -98,7 +149,7 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       });
 
       await batch.commit();
-      setStatus({ type: 'success', msg: `Successfully logged batch for ${selectedRecipe.name}` });
+      setStatus({ type: 'success', msg: `Successfully logged batch for ${selectedRecipeName}` });
       setTimeout(() => setStatus(null), 5000);
       setBatchMultiplier(1);
     } catch (err) {
@@ -161,11 +212,16 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                     </tr>
                   ) : (
                     requirements.map((req, idx) => (
-                      <tr key={idx} className="data-row">
+                      <tr key={idx} className={`data-row ${req.isInvalid ? 'bg-red-50/30' : ''}`}>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
-                            <span className="text-[14px] font-bold text-zinc-800">{req.name}</span>
-                            <span className="text-[10px] text-zinc-400 font-mono tracking-wider">{req.requiredG.toLocaleString()}g formula weight</span>
+                            <span className="text-[14px] font-bold text-zinc-800">
+                              {req.name}
+                              {req.isInvalid && <span className="ml-2 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded tracking-wider uppercase">Missing/Invalid Ref</span>}
+                            </span>
+                            <span className="text-[10px] text-zinc-400 font-mono tracking-wider">
+                              {(req.requiredInInvUnit / batchMultiplier || 0).toLocaleString()} {req.recipeUnit} per unit
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right font-mono font-bold text-[15px] text-zinc-900">
@@ -173,9 +229,10 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            req.isInvalid ? 'bg-red-100 border-red-200 text-red-700' :
                             req.onHand >= req.requiredInInvUnit ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-600'
                           }`}>
-                            {req.onHand >= req.requiredInInvUnit ? 'STOCK SECURE' : 'INSUFFICIENT'}
+                            {req.isInvalid ? 'INVALID REF' : req.onHand >= req.requiredInInvUnit ? 'STOCK SECURE' : 'INSUFFICIENT'}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right font-mono text-[13px]">
@@ -196,21 +253,21 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">Total Mixed Yield Projection</p>
                   <p className="text-3xl font-bold tracking-tight">
-                    {(selectedRecipe.ingredients.reduce((a, b) => a + b.amount, 0) * batchMultiplier).toLocaleString()}
-                    <span className="text-xs ml-2 text-zinc-600 font-sans uppercase">total grams</span>
+                    {batchMultiplier.toLocaleString()}
+                    <span className="text-xs ml-2 text-zinc-600 font-sans uppercase">finished units</span>
                   </p>
                 </div>
                 <button
                   onClick={handleDeduct}
-                  disabled={!canFulfill || isDeducting}
+                  disabled={!canCommitBatch || isDeducting}
                   className={`flex items-center gap-3 px-10 py-4 rounded-lg font-bold uppercase tracking-widest text-[12px] transition-all ${
-                    canFulfill 
+                    canCommitBatch 
                       ? 'bg-accent text-zinc-900 hover:bg-amber-400 shadow-xl shadow-amber-900/20 active:translate-y-px' 
                       : 'bg-zinc-800 text-zinc-600 cursor-not-allowed border border-zinc-700'
                   }`}
                 >
                   {isDeducting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Scale className="h-4 w-4" />}
-                  {canFulfill ? 'COMMIT BATCH & SYNC' : 'INSUFFICIENT STOCK'}
+                  {locationId === 'all' ? 'CHOOSE LOCATION TO COMMIT' : canFulfill ? 'COMMIT BATCH & SYNC' : requirements.some(r => r.isInvalid) ? 'INVALID FORMULA REF' : 'INSUFFICIENT STOCK'}
                 </button>
               </div>
             )}
@@ -233,7 +290,11 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                   className="w-full bg-white border border-zinc-200 rounded px-4 py-3 font-bold text-zinc-900 text-[14px] focus:outline-none focus:ring-2 focus:ring-accent/10 transition-all cursor-pointer"
                 >
                   <option value="">Select a mix...</option>
-                  {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  {recipes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.finishedGoodName || r.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -261,6 +322,12 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
                 <p className="text-[12px] font-medium leading-relaxed">{status.msg}</p>
               </div>
             )}
+
+            {locationId === 'all' && (
+              <div className="rounded border border-amber-200 bg-amber-50 p-4 text-[12px] font-medium leading-relaxed text-amber-800">
+                Total Inventory is planning-only. Switch to a named location to commit a real batch deduction.
+              </div>
+            )}
           </div>
           
           <div className="bg-zinc-900 rounded-lg p-6 shadow-xl space-y-4">
@@ -281,4 +348,3 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
     </div>
   );
 }
-

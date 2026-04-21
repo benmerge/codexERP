@@ -2,6 +2,9 @@ export interface LocationDef {
   id: string;
   name: string;
   createdAt?: string;
+  isActive?: boolean;
+  updatedAt?: string;
+  deactivatedAt?: string;
 }
 
 export interface Ingredient {
@@ -14,14 +17,20 @@ export interface Ingredient {
   lastUpdated?: string;
 }
 
+export type RecipeMeasureUnit = 'g' | 'kg' | 'ml';
+
 export interface RecipeIngredient {
   ingredientId: string;
+  ingredientName?: string;
   amount: number;
+  unit: RecipeMeasureUnit;
 }
 
 export interface Recipe {
   id: string;
   locationId?: string;
   name: string;
+  finishedGoodId?: string;
+  finishedGoodName?: string;
   ingredients: RecipeIngredient[];
 }
