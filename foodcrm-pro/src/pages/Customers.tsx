@@ -41,7 +41,7 @@ export const Customers = () => {
       email,
       phone,
       salesRepId: salesRep?.id || '',
-      salesRepName: salesRep?.displayName || salesRep?.email || 'Assigned rep',
+      salesRepName: salesRep?.displayName || salesRep?.email || '',
       salesRepEmail: salesRep?.email || '',
       isProspect: false,
       category,

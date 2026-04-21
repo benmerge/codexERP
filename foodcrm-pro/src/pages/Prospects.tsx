@@ -87,7 +87,7 @@ export const Prospects = () => {
             email: '',
             phone: '',
             salesRepId: defaultRep?.id,
-            salesRepName: defaultRep?.displayName || defaultRep?.email || 'Assigned rep',
+            salesRepName: defaultRep?.displayName || defaultRep?.email || '',
             salesRepEmail: defaultRep?.email || '',
             isProspect: true,
             category: 'Retail',

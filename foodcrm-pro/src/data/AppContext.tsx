@@ -114,12 +114,21 @@ const normalizeSalesRep = (member: OrgMember, fallbackUser?: User | null): OrgMe
 
 export const normalizeRepData = <T extends { salesRepId?: string, salesRepName?: string, salesRepEmail?: string }>(record: T): T => {
   let { salesRepId, salesRepName, salesRepEmail } = record;
+  const looksLikeUid = (value?: string) =>
+    !!value &&
+    /^[A-Za-z0-9_-]{20,}$/.test(value) &&
+    !value.includes('@') &&
+    !value.includes(' ');
   
   if (!salesRepId || salesRepId === 'unassigned') {
     salesRepId = '';
     salesRepName = '';
     salesRepEmail = '';
-  } else if (salesRepName === 'Assigned rep') {
+  } else if (
+    salesRepName === 'Assigned rep' ||
+    salesRepName === salesRepId ||
+    looksLikeUid(salesRepName)
+  ) {
     salesRepName = '';
   }
 
