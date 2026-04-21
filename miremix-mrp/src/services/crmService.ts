@@ -10,7 +10,6 @@ import {
   updateDoc,
   doc,
   onSnapshot,
-  where,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
@@ -101,6 +100,10 @@ function isOpenOrder(status: string): boolean {
   return OPEN_ORDER_STATUSES.some((open) => normalized.includes(open));
 }
 
+function isSharedOrgOrder(data: DocumentData): boolean {
+  return data.uid === crmConfig.sharedOrgId || data.orgId === crmConfig.sharedOrgId;
+}
+
 function normalizeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): CRMOrder {
   const data = snapshot.data();
   const status = normalizeStatus(data.status ?? data.fulfillmentStatus ?? data.orderStatus);
@@ -137,13 +140,10 @@ export const crmService = {
     if (!auth.currentUser) return [];
 
     try {
-      const q = query(
-        collectionGroup(db, crmConfig.ordersCollection),
-        where('uid', '==', crmConfig.sharedOrgId)
-      );
-      
+      const q = query(collectionGroup(db, crmConfig.ordersCollection));
       const snapshot = await getDocs(q);
       return snapshot.docs
+        .filter((order) => isSharedOrgOrder(order.data()))
         .map(normalizeOrder)
         .filter((order) => isOpenOrder(order.status));
     } catch (error) {
@@ -165,13 +165,11 @@ export const crmService = {
       return () => {};
     }
 
-    const q = query(
-      collectionGroup(db, crmConfig.ordersCollection),
-      where('uid', '==', crmConfig.sharedOrgId)
-    );
+    const q = query(collectionGroup(db, crmConfig.ordersCollection));
 
     return onSnapshot(q, (snapshot) => {
       const orders = snapshot.docs
+        .filter((entry) => isSharedOrgOrder(entry.data()))
         .map(normalizeOrder)
         .filter((order) => isOpenOrder(order.status));
       

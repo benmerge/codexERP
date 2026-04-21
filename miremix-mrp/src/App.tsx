@@ -199,7 +199,9 @@ export default function App() {
   };
 
   const allowedDomains = ['@40centurygrain.com', '@40centurygrain.earth', '@mergeimpact.com'];
-  const isAllowedDomain = user?.email ? allowedDomains.some((domain) => user.email!.endsWith(domain)) : false;
+  const isAllowedDomain = user?.email
+    ? allowedDomains.some((domain) => user.email!.toLowerCase().endsWith(domain))
+    : false;
   const allowedDomainLabel = allowedDomains.join(', ');
   const activeNav = navItems.find((item) => item.id === activeTab) ?? navItems[0];
   const activeLocations = locations.filter((location) => location.isActive !== false);

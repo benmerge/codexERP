@@ -184,14 +184,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             await setDoc(doc(db, 'users', currentUser.uid), {
               email: currentUser.email,
               displayName: currentUser.displayName || currentUser.email,
-              role: currentUser.email === 'ben@mergeimpact.com' ? 'admin' : 'user',
+              role: currentUser.email?.toLowerCase() === 'ben@mergeimpact.com' ? 'admin' : 'user',
               orgId: dataId
             }, { merge: true });
 
             await setDoc(doc(db, `users/${dataId}/team`, currentUser.uid), {
               email: currentUser.email,
               displayName: currentUser.displayName || currentUser.email,
-              role: currentUser.email === 'ben@mergeimpact.com' ? 'admin' : 'user',
+              role: currentUser.email?.toLowerCase() === 'ben@mergeimpact.com' ? 'admin' : 'user',
               orgId: dataId,
             }, { merge: true });
           } catch (err) {
@@ -455,6 +455,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return removeUndefined({
       ...order,
       uid: dataId,
+      orgId: dataId,
       customerName: customer?.name,
       customerCompany: customer?.company || customer?.name,
       customerEmail: customer?.email,

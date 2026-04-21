@@ -57,7 +57,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "ben@mergeimpact.com" && request.auth.token.email_verified == true));
+          (request.auth.token.email.lower() == "ben@mergeimpact.com" && request.auth.token.email_verified == true));
     }
 
     function uidUnchanged(userId) {
@@ -73,9 +73,9 @@ service cloud.firestore {
              request.auth.token.email != null &&
              request.auth.token.email_verified == true &&
              (
-               request.auth.token.email.matches('.*@40centurygrain\\.com$') ||
-               request.auth.token.email.matches('.*@40centurygrain\\.earth$') ||
-               request.auth.token.email.matches('.*@mergeimpact\\.com$')
+               request.auth.token.email.lower().matches('.*@40centurygrain\\.com$') ||
+               request.auth.token.email.lower().matches('.*@40centurygrain\\.earth$') ||
+               request.auth.token.email.lower().matches('.*@mergeimpact\\.com$')
              );
     }
 
