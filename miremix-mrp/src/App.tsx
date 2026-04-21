@@ -23,6 +23,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [clientLogo, setClientLogo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const BEN_LOCATION_EMAILS = ['ben@mergeimpact.com', 'ben@40centurygrain.com'];
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard },
@@ -73,7 +74,9 @@ export default function App() {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        setDoc(doc(db, 'locations', 'default'), defaultLoc);
+        setLocations([defaultLoc]);
+        setActiveLocationId('default');
+        void setDoc(doc(db, 'locations', 'default'), defaultLoc);
       } else {
         setLocations(locs);
         if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId && l.isActive !== false)) {
@@ -202,12 +205,18 @@ export default function App() {
   const isAllowedDomain = user?.email
     ? allowedDomains.some((domain) => user.email!.toLowerCase().endsWith(domain))
     : false;
+  const canViewMultipleLocations = user?.email
+    ? BEN_LOCATION_EMAILS.includes(user.email.toLowerCase())
+    : false;
   const allowedDomainLabel = allowedDomains.join(', ');
   const activeNav = navItems.find((item) => item.id === activeTab) ?? navItems[0];
   const activeLocations = locations.filter((location) => location.isActive !== false);
   const inactiveLocations = locations.filter((location) => location.isActive === false);
   const locationOptions: LocationDef[] = [{ id: 'all', name: 'Total Inventory' }, ...activeLocations];
-  const activeLocation = locationOptions.find((loc) => loc.id === activeLocationId) ?? locationOptions[0];
+  const activeLocation =
+    locationOptions.find((loc) => loc.id === activeLocationId) ??
+    locationOptions.find((loc) => loc.id === 'all') ??
+    locationOptions[0];
 
   if (!authReady) {
     return (
@@ -385,7 +394,7 @@ export default function App() {
             >
               {locationOptions.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
             </select>
-            {isCreatingLocation ? (
+            {canViewMultipleLocations && isCreatingLocation ? (
               <div className="mt-2 space-y-2">
                 <input
                   type="text"
@@ -399,7 +408,8 @@ export default function App() {
                   <button onClick={() => setIsCreatingLocation(false)} className="text-[11px] font-bold text-zinc-500 hover:text-white">CANCEL</button>
                 </div>
               </div>
-            ) : (
+            ) : null}
+            {canViewMultipleLocations && (
               <div className="mt-2 flex items-center gap-3">
                 <button
                   onClick={() => setIsCreatingLocation(true)}
@@ -416,7 +426,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {isManagingLocations && !isCreatingLocation && (
+            {canViewMultipleLocations && isManagingLocations && !isCreatingLocation && (
               <div className="mt-3 space-y-2 rounded-2xl border border-white/10 bg-white/6 p-3">
                 <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-zinc-500">Locations</div>
                 {locations.length === 0 ? (
