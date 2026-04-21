@@ -22,11 +22,25 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
   const [status, setStatus] = useState<OrderStatus>('Order placed');
   const [salesRepId, setSalesRepId] = useState('');
   const selectedCustomer = customers.find((entry) => entry.id === customerId);
+  const selectedSalesRep = salesReps.find((rep) => rep.id === salesRepId);
+  const customerRepLabel = selectedCustomer?.salesRepName || selectedCustomer?.salesRepEmail || 'Unassigned';
+  const salesRepOptions = React.useMemo(() => {
+    if (!selectedCustomer?.salesRepId) return salesReps;
+    if (salesReps.some((rep) => rep.id === selectedCustomer.salesRepId)) return salesReps;
+    return [
+      {
+        id: selectedCustomer.salesRepId,
+        email: selectedCustomer.salesRepEmail || '',
+        displayName: selectedCustomer.salesRepName || selectedCustomer.salesRepEmail || '',
+      },
+      ...salesReps,
+    ];
+  }, [salesReps, selectedCustomer]);
 
   const handleCustomerChange = (value: string) => {
     setCustomerId(value);
     const nextCustomer = customers.find((entry) => entry.id === value);
-    setSalesRepId(nextCustomer?.salesRepId || salesReps[0]?.id || '');
+    setSalesRepId(nextCustomer?.salesRepId || '');
   };
 
   const handleAddItem = () => {
@@ -54,13 +68,13 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
     }, 0);
 
     const customer = customers.find((entry) => entry.id === customerId);
-    const selectedSalesRep = salesReps.find((rep) => rep.id === salesRepId) || salesReps.find((rep) => rep.id === customer?.salesRepId);
+    const resolvedSalesRep = salesRepId ? salesReps.find((rep) => rep.id === salesRepId) : undefined;
     const newOrder: Order = {
       id: `ORD-${Date.now().toString().slice(-6)}`,
       customerId,
-      salesRepId: selectedSalesRep?.id || customer?.salesRepId,
-      salesRepName: selectedSalesRep?.displayName || selectedSalesRep?.email || customer?.salesRepName,
-      salesRepEmail: selectedSalesRep?.email || customer?.salesRepEmail,
+      salesRepId: salesRepId,
+      salesRepName: resolvedSalesRep?.displayName || resolvedSalesRep?.email || (salesRepId === customer?.salesRepId ? customer?.salesRepName : ''),
+      salesRepEmail: resolvedSalesRep?.email || (salesRepId === customer?.salesRepId ? customer?.salesRepEmail : ''),
       date: new Date().toISOString().split('T')[0],
       status,
       items: items.map(i => ({ ...i, price: products.find(p => p.id === i.productId)?.price })),
@@ -99,7 +113,7 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                Account rep: {selectedCustomer?.salesRepName || selectedCustomer?.salesRepEmail || 'Assign one on the customer/prospect record first'}
+                Account rep: {customerRepLabel}
               </p>
             </div>
 
@@ -122,14 +136,15 @@ export const CreateOrderDialog: React.FC<CreateOrderDialogProps> = ({ open, onOp
           <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
             <div className="space-y-2">
               <Label>Account Rep</Label>
-              <Select value={salesRepId} onValueChange={setSalesRepId}>
+              <Select value={salesRepId || 'unassigned'} onValueChange={(v) => setSalesRepId(v === 'unassigned' ? '' : v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a rep" />
+                  <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  {salesReps.map((rep) => (
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {salesRepOptions.map((rep) => (
                     <SelectItem key={rep.id} value={rep.id}>
-                      {rep.displayName || rep.email}
+                      {rep.displayName || rep.email || 'Assigned rep'}
                     </SelectItem>
                   ))}
                 </SelectContent>

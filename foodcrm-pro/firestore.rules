@@ -84,8 +84,9 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasOnly(['email', 'role', 'clientLogo', 'orgId']) &&
+      return data.keys().hasOnly(['email', 'displayName', 'role', 'clientLogo', 'orgId']) &&
              (!('email' in data) || (data.email is string && isValidEmail(data.email))) &&
+             (!('displayName' in data) || data.displayName is string) &&
              (!('role' in data) || (data.role in ['admin', 'user'])) &&
              (!('clientLogo' in data) || data.clientLogo is string && data.clientLogo.size() < 1000000) &&
              (!('orgId' in data) || data.orgId is string);
@@ -110,6 +111,9 @@ service cloud.firestore {
              data.company is string && data.company.size() > 0 && data.company.size() < 200 &&
              (!('email' in data) || data.email == '' || (data.email is string && data.email.size() < 200)) &&
              (!('phone' in data) || data.phone == '' || (data.phone is string && data.phone.size() < 50)) &&
+             (!('salesRepId' in data) || data.salesRepId is string && data.salesRepId.size() < 100) &&
+             (!('salesRepName' in data) || data.salesRepName is string && data.salesRepName.size() < 200) &&
+             (!('salesRepEmail' in data) || data.salesRepEmail == '' || (data.salesRepEmail is string && data.salesRepEmail.size() < 200)) &&
              data.isProspect is bool &&
              data.category in ['Retail', 'Wholesale', 'Distributor', 'Partner'] &&
              data.pipelineStage in ['Lead', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'] &&
@@ -169,6 +173,15 @@ service cloud.firestore {
              data.uid is string && data.uid.size() < 100;
     }
 
+    function isValidTeamMember(data) {
+      return data.keys().hasOnly(['email', 'displayName', 'orgId', 'role']) &&
+             data.email is string &&
+             isValidEmail(data.email) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('orgId' in data) || data.orgId is string) &&
+             (!('role' in data) || data.role in ['admin', 'user']);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -222,6 +235,12 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidSupplier(request.resource.data) && uidUnchanged(userId);
         allow update: if isOwner(userId) && isValidSupplier(request.resource.data) && uidNotModified();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /team/{memberId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidTeamMember(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

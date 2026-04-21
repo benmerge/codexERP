@@ -26,9 +26,8 @@ export const KanbanBoard = () => {
       const customer = customers.find(c => c.id === draggableId);
       if (customer) {
         const newStage = destination.droppableId as PipelineStage;
-        const isProspect = newStage !== 'Closed Won' && newStage !== 'Closed Lost';
         
-        updateCustomer({ ...customer, pipelineStage: newStage, isProspect });
+        updateCustomer({ ...customer, pipelineStage: newStage });
 
         // Trigger email if moved to Closed Won
         if (newStage === 'Closed Won' && customer.pipelineStage !== 'Closed Won') {

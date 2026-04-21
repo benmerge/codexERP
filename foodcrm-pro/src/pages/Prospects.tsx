@@ -30,26 +30,21 @@ export const Prospects = () => {
   const repLabel = (rep: OrgMember) =>
     rep.displayName?.trim() ||
     rep.email?.trim() ||
-    (rep.id === user?.uid ? user?.displayName || user?.email || 'Assigned rep' : 'Assigned rep');
+    'Assigned rep';
   const defaultRep = safeSalesReps.find((rep) => rep.id === user?.uid);
-  const normalizeProspectConversion = (prospect: Customer, nextStage: PipelineStage): Customer => ({
-    ...prospect,
-    pipelineStage: nextStage,
-    isProspect: nextStage !== 'Closed Won' && nextStage !== 'Closed Lost',
-  });
 
   const handleAddProspect = (e: React.FormEvent) => {
     e.preventDefault();
-    const salesRep = safeSalesReps.find((rep) => rep.id === salesRepId) || safeSalesReps.find((rep) => rep.id === user?.uid);
+    const salesRep = safeSalesReps.find((rep) => rep.id === salesRepId);
     addCustomer({
       id: `c${Date.now()}`,
       name,
       company,
       email,
       phone,
-      salesRepId: salesRep?.id,
-      salesRepName: salesRep?.displayName || salesRep?.email,
-      salesRepEmail: salesRep?.email,
+      salesRepId: salesRep?.id || '',
+      salesRepName: salesRep?.displayName || salesRep?.email || '',
+      salesRepEmail: salesRep?.email || '',
       isProspect: true,
       category,
       pipelineStage: 'Lead',
@@ -92,8 +87,8 @@ export const Prospects = () => {
             email: '',
             phone: '',
             salesRepId: defaultRep?.id,
-            salesRepName: defaultRep?.displayName || defaultRep?.email,
-            salesRepEmail: defaultRep?.email,
+            salesRepName: defaultRep?.displayName || defaultRep?.email || 'Assigned rep',
+            salesRepEmail: defaultRep?.email || '',
             isProspect: true,
             category: 'Retail',
             pipelineStage: 'Lead',
@@ -127,11 +122,8 @@ export const Prospects = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Prospects</h2>
-          <p className="text-slate-500">Manage your leads and potential new business.</p>
-        </div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Prospects</h2>
         
         <div className="flex gap-2">
           <input 
@@ -193,11 +185,12 @@ export const Prospects = () => {
               </div>
               <div className="space-y-2">
                 <Label>Account Rep</Label>
-                <Select value={salesRepId} onValueChange={setSalesRepId}>
+                <Select value={salesRepId || 'unassigned'} onValueChange={(v) => setSalesRepId(v === 'unassigned' ? '' : v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a rep" />
+                    <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
                     {safeSalesReps.map((rep) => (
                       <SelectItem key={rep.id} value={rep.id}>
                         {repLabel(rep)}
@@ -280,7 +273,7 @@ export const Prospects = () => {
                         <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={prospect.pipelineStage}
-                            onValueChange={(val: PipelineStage) => updateCustomer(normalizeProspectConversion(prospect, val))}
+                            onValueChange={(val: PipelineStage) => updateCustomer({ ...prospect, pipelineStage: val })}
                           >
                             <SelectTrigger className="h-8 w-[140px] border-slate-200">
                               <SelectValue />

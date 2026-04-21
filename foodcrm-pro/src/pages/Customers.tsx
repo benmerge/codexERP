@@ -9,11 +9,12 @@ import { Search, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CustomerCategory, PipelineStage, Customer } from '../types';
+import { CustomerCategory, PipelineStage, Customer, OrgMember } from '../types';
 import { EditCustomerDialog } from '../components/EditCustomerDialog';
 
 export const Customers = () => {
-  const { customers, addCustomer, updateCustomer } = useAppContext();
+  const { customers, salesReps, addCustomer, updateCustomer, user } = useAppContext();
+  const safeSalesReps = Array.isArray(salesReps) ? salesReps : [];
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -24,15 +25,24 @@ export const Customers = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState<CustomerCategory>('Retail');
+  const [salesRepId, setSalesRepId] = useState('');
+  const repLabel = (rep: OrgMember) =>
+    rep.displayName?.trim() ||
+    rep.email?.trim() ||
+    'Assigned rep';
 
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
+    const salesRep = safeSalesReps.find((rep) => rep.id === salesRepId);
     addCustomer({
       id: `c${Date.now()}`,
       name,
       company,
       email,
       phone,
+      salesRepId: salesRep?.id || '',
+      salesRepName: salesRep?.displayName || salesRep?.email || 'Assigned rep',
+      salesRepEmail: salesRep?.email || '',
       isProspect: false,
       category,
       pipelineStage: 'Closed Won',
@@ -46,6 +56,7 @@ export const Customers = () => {
     setEmail('');
     setPhone('');
     setCategory('Retail');
+    setSalesRepId(user?.uid || '');
   };
 
   const filteredCustomers = customers.filter(c => 
@@ -64,11 +75,8 @@ export const Customers = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Customers</h2>
-          <p className="text-slate-500">Manage your active customer relationships.</p>
-        </div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Customers</h2>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger render={(props) => (
@@ -113,6 +121,22 @@ export const Customers = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Account Rep</Label>
+                <Select value={salesRepId || 'unassigned'} onValueChange={(v) => setSalesRepId(v === 'unassigned' ? '' : v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {safeSalesReps.map((rep) => (
+                      <SelectItem key={rep.id} value={rep.id}>
+                        {repLabel(rep)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex justify-end pt-4">
                 <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">
                   Save Customer
@@ -146,6 +170,7 @@ export const Customers = () => {
                   <TableHead>Company</TableHead>
                   <TableHead>Contact Name</TableHead>
                   <TableHead>Contact Info</TableHead>
+                  <TableHead>Rep</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead className="text-right">Last Contact</TableHead>
@@ -154,7 +179,7 @@ export const Customers = () => {
               <TableBody>
                 {filteredCustomers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-slate-500">
+                    <TableCell colSpan={7} className="h-24 text-center text-slate-500">
                       No customers found.
                     </TableCell>
                   </TableRow>
@@ -179,6 +204,7 @@ export const Customers = () => {
                           ) : null}
                         </div>
                       </TableCell>
+                      <TableCell>{customer.salesRepName || customer.salesRepEmail || 'Unassigned'}</TableCell>
                       <TableCell>{customer.category}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`border-none ${getStatusColor(customer.pipelineStage)}`}>

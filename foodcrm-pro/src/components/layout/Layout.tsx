@@ -1,9 +1,8 @@
 import React, { useRef } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle, Building2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../../data/AppContext';
-import mergeLogo from '../../assets/merge-impact-logo.png';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const ClientLogoUpload = () => {
@@ -90,7 +89,8 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
       setIsResetOpen(false);
     } catch (error) {
       console.error('Failed to reset shared test org:', error);
-      alert('Failed to reset shared test org.');
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to reset shared test org: ${message}`);
     } finally {
       setIsResetting(false);
     }
@@ -99,16 +99,16 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
   return (
     <>
       <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md crm-panel">
           <DialogHeader>
-            <DialogTitle>Reset Shared Test Org</DialogTitle>
+            <DialogTitle>Reset Test Org</DialogTitle>
             <DialogDescription>
-              This clears the shared CRM test workspace and reseeds it with fresh demo customers, products, suppliers, tasks, and orders.
+              This clears the shared test workspace and reseeds it with fresh demo customers, products, suppliers, tasks, and orders.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>All CRM users and the MiRemix MRP dashboard will immediately see the new shared test dataset.</span>
+            <span>All connected users and the MiRemix MRP dashboard will immediately see the new shared test dataset.</span>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsResetOpen(false)} disabled={isResetting}>Cancel</Button>
@@ -119,17 +119,24 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
         </DialogContent>
       </Dialog>
 
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full border-r border-slate-800">
-        <div className="p-6 flex items-center gap-3 text-white">
-          <div className="w-8 h-8 rounded bg-emerald-500 flex items-center justify-center font-bold text-white shadow-lg shadow-emerald-500/20">
-            M
+      <aside className="h-full w-[88vw] max-w-72 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800">
+        <div className="p-6 text-white">
+          <div className="mb-5 flex justify-end md:hidden">
+            <Button variant="ghost" size="icon" onClick={onClose} className="text-slate-300 hover:text-white hover:bg-white/8">
+              <X className="w-4 h-4" />
+            </Button>
           </div>
-          <div>
-            <span className="font-semibold text-lg tracking-tight block leading-tight">MiCRM Pro</span>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-slate-100 ring-1 ring-slate-700">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="font-semibold text-xl tracking-tight block leading-tight text-white">Workspace</span>
+            </div>
           </div>
         </div>
         
-        <nav className="flex-1 px-4 py-4 space-y-1">
+        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
@@ -138,8 +145,8 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
                   isActive 
-                    ? 'bg-emerald-500/10 text-emerald-400 font-medium' 
-                    : 'hover:bg-slate-800 hover:text-white'
+                    ? 'bg-slate-800 text-white font-medium' 
+                    : 'hover:bg-slate-900 hover:text-white'
                 }`
               }
             >
@@ -150,7 +157,7 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
           <button
             type="button"
             onClick={() => setIsResetOpen(true)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-amber-300 transition-colors hover:bg-slate-800 hover:text-amber-200"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-amber-200 transition-colors hover:bg-slate-900 hover:text-amber-100"
           >
             <RotateCcw className="w-5 h-5" />
             Reset Test Org
@@ -172,23 +179,9 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
                 <span className="text-xs text-slate-500 truncate">{user?.email}</span>
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={logout} className="text-slate-400 hover:text-white hover:bg-slate-800" title="Sign Out">
+            <Button variant="ghost" size="icon" onClick={logout} className="text-slate-400 hover:text-white hover:bg-white/8" title="Sign Out">
               <LogOut className="w-4 h-4" />
             </Button>
-          </div>
-          
-          <div className="flex flex-col items-center justify-center pt-4 border-t border-slate-800/50">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Powered by</span>
-            <div className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors">
-              <img src={mergeLogo} alt="Merge Impact" className="w-6 h-6 object-contain invert opacity-70" onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                e.currentTarget.nextElementSibling?.classList.remove('hidden');
-              }} />
-              <div className="hidden w-6 h-6 rounded-full border-2 border-current flex items-center justify-center relative">
-                <div className="absolute bottom-0 w-4 h-3 bg-current rounded-t-full" style={{ clipPath: 'polygon(0 100%, 100% 100%, 100% 0, 50% 50%, 0 0)' }}></div>
-              </div>
-              <span className="text-sm font-semibold tracking-tight">Merge Impact</span>
-            </div>
           </div>
         </div>
       </aside>
@@ -200,11 +193,11 @@ export const Layout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans">
+    <div className="crm-shell flex h-screen w-full overflow-hidden font-sans">
       {/* Mobile overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
+          className="fixed inset-0 bg-black/50 z-40 backdrop-blur-[2px] md:hidden" 
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
@@ -215,18 +208,24 @@ export const Layout = () => {
       </div>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
+        <header className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 md:h-20 md:px-6 md:py-0">
+          <div className="flex h-full flex-col justify-center gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-start gap-3 md:items-center md:gap-4">
+            <Button variant="ghost" size="icon" className="mt-0.5 md:hidden" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu className="w-5 h-5" />
             </Button>
-          </div>
-          <div className="flex items-center gap-4">
-            <ClientLogoUpload />
+            </div>
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="hidden sm:flex">
+                <ClientLogoUpload />
+              </div>
+            </div>
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+        <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 xl:p-8">
+          <div className="mx-auto max-w-[1600px]">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

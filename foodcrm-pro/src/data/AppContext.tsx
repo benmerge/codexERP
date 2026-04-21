@@ -103,7 +103,6 @@ const normalizeSalesRep = (member: OrgMember, fallbackUser?: User | null): OrgMe
     fallbackUser?.displayName ||
     fallbackUser?.email ||
     email ||
-    humanizeRepLabel(member.id) ||
     'Assigned rep';
 
   return {
@@ -113,10 +112,32 @@ const normalizeSalesRep = (member: OrgMember, fallbackUser?: User | null): OrgMe
   };
 };
 
-const normalizeCustomerStatus = (customer: Customer): Customer => ({
-  ...customer,
-  isProspect: customer.pipelineStage !== 'Closed Won',
-});
+export const normalizeRepData = <T extends { salesRepId?: string, salesRepName?: string, salesRepEmail?: string }>(record: T): T => {
+  let { salesRepId, salesRepName, salesRepEmail } = record;
+  
+  if (!salesRepId || salesRepId === 'unassigned') {
+    salesRepId = '';
+    salesRepName = '';
+    salesRepEmail = '';
+  } else if (salesRepName === 'Assigned rep') {
+    salesRepName = '';
+  }
+
+  return {
+    ...record,
+    salesRepId,
+    salesRepName,
+    salesRepEmail,
+  };
+};
+
+const normalizeCustomerStatus = (customer: Customer): Customer => {
+  const normalized = normalizeRepData(customer);
+  return {
+    ...normalized,
+    isProspect: normalized.pipelineStage !== 'Closed Won',
+  };
+};
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -238,7 +259,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const unsubscribeCustomers = onSnapshot(customersRef, (snapshot) => {
       const loadedCustomers: Customer[] = [];
       snapshot.forEach(doc => {
-        loadedCustomers.push({ ...doc.data(), id: doc.id } as Customer);
+        loadedCustomers.push(normalizeRepData({ ...doc.data(), id: doc.id } as Customer));
       });
       setCustomers(loadedCustomers);
     }, (error) => {
@@ -260,7 +281,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const unsubscribeOrders = onSnapshot(ordersRef, (snapshot) => {
       const loadedOrders: Order[] = [];
       snapshot.forEach(doc => {
-        loadedOrders.push({ ...doc.data(), id: doc.id } as Order);
+        loadedOrders.push(normalizeRepData({ ...doc.data(), id: doc.id } as Order));
       });
 
       const nextStatuses = Object.fromEntries(loadedOrders.map((order) => [order.id, order.status]));
@@ -410,7 +431,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (user ? {
         id: user.uid,
         email: user.email || '',
-        displayName: user.displayName || user.email || 'Sales Rep',
+        displayName: user.displayName || user.email || 'Assigned rep',
       } : null);
     const items = order.items.map((item) => {
       const product = products.find((entry) => entry.id === item.productId);
@@ -429,7 +450,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       customerCompany: customer?.company || customer?.name,
       customerEmail: customer?.email,
       salesRepId: order.salesRepId || customer?.salesRepId || currentRep?.id,
-      salesRepName: order.salesRepName || customer?.salesRepName || currentRep?.displayName,
+      salesRepName: order.salesRepName || customer?.salesRepName || currentRep?.displayName || 'Assigned rep',
       salesRepEmail: order.salesRepEmail || customer?.salesRepEmail || currentRep?.email,
       items,
     });

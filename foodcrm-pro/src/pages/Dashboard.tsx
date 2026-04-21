@@ -49,11 +49,11 @@ export const Dashboard = () => {
   
   const [configs, setConfigs] = useState<WidgetConfig[]>([
     { id: 'stats', title: 'Key Performance Indicators', description: 'Monthly revenue and volume metrics', enabled: true, cols: 7 },
-    { id: 'top_products', title: 'Inventory Velocity', description: 'Top performing product lines', enabled: true, cols: 4 },
+    { id: 'top_products', title: 'Inventory Velocity', description: 'Top performing product lines', enabled: false, cols: 4 },
     { id: 'recent_orders', title: 'Live Order Feed', description: 'Most recent site and manual orders', enabled: true, cols: 3 },
     { id: 'pipeline', title: 'Revenue Pipeline', description: 'Distribution of leads across stages', enabled: true, cols: 4 },
-    { id: 'low_stock', title: 'Fulfillment Risks', description: 'Items nearing depletion', enabled: true, cols: 3 },
-    { id: 'task_summary', title: 'Operations Queue', description: 'Status of ongoing operational tasks', enabled: true, cols: 7 },
+    { id: 'low_stock', title: 'Fulfillment Risks', description: 'Items nearing depletion', enabled: false, cols: 3 },
+    { id: 'task_summary', title: 'Operations Queue', description: 'Status of ongoing operational tasks', enabled: false, cols: 7 },
   ]);
 
   const [isCustomizing, setIsCustomizing] = useState(false);
@@ -132,15 +132,8 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <LayoutDashboard className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Custom Workspace</h2>
-          </div>
-          <p className="text-sm text-slate-500 italic serif">Tailored overview of your ecosystem operations and infrastructure.</p>
-        </div>
-        
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Dashboard</h2>
         <Dialog open={isCustomizing} onOpenChange={setIsCustomizing}>
           <DialogTrigger render={(props) => (
             <Button {...props} variant="outline" className="gap-2 shadow-sm border-slate-200">
@@ -185,52 +178,45 @@ export const Dashboard = () => {
           return (
             <div
               key={widget.id}
-              className={`min-w-0 ${isFullWidth ? 'w-full' : 'flex-[1_1_100%] md:flex-[1_1_350px] max-w-full'} ${widget.id === 'stats' ? 'grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4' : 'flex flex-col'}`}
+              className={`min-w-0 ${isFullWidth ? 'w-full' : 'flex-[1_1_100%] md:flex-[1_1_350px] max-w-full'} flex flex-col`}
             >
             {widget.id === 'stats' && (
-              <>
-                <Card className="border-emerald-100 shadow-sm relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-1 opacity-10"><TrendingUp className="h-24 w-24" /></div>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                     <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Monthly Volume</CardTitle>
-                     <TrendingUp className="h-4 w-4 text-emerald-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-black text-slate-900 tabular-nums">{projectedMonthlyUnits.toLocaleString(undefined, { maximumFractionDigits: 0 })} units</div>
-                    <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">Est. flow from active accounts</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-blue-100 shadow-sm overflow-hidden">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Pipeline Load</CardTitle>
-                    <BarChart3 className="h-4 w-4 text-blue-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-black text-slate-900 tabular-nums">{pipelineUnits.toLocaleString(undefined, { maximumFractionDigits: 0 })} units</div>
-                    <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">Potential upcoming demand</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-slate-100 shadow-sm">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Account Base</CardTitle>
-                    <Users className="h-4 w-4 text-indigo-500" />
-                  </CardHeader>
-                  <CardContent>
+              <Card className="border-slate-200 shadow-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                  <div className="p-5">
+                    <div className="flex items-center gap-2 mb-2">
+                       <TrendingUp className="h-4 w-4 text-emerald-500" />
+                       <span className="text-xs font-semibold text-slate-500">Monthly Volume</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 tabular-nums">{projectedMonthlyUnits.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-sm font-medium text-slate-500">units</span></div>
+                    <p className="text-xs text-slate-500 mt-1">Est. flow from active accounts</p>
+                  </div>
+                  <div className="p-5">
+                    <div className="flex items-center gap-2 mb-2">
+                       <BarChart3 className="h-4 w-4 text-blue-500" />
+                       <span className="text-xs font-semibold text-slate-500">Pipeline Load</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 tabular-nums">{pipelineUnits.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-sm font-medium text-slate-500">units</span></div>
+                    <p className="text-xs text-slate-500 mt-1">Potential upcoming demand</p>
+                  </div>
+                  <div className="p-5">
+                    <div className="flex items-center gap-2 mb-2">
+                       <Users className="h-4 w-4 text-indigo-500" />
+                       <span className="text-xs font-semibold text-slate-500">Account Base</span>
+                    </div>
                     <div className="text-2xl font-black text-slate-900 tabular-nums">{activeCustomers}</div>
-                    <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">{customers.length} Contacts total</p>
-                  </CardContent>
-                </Card>
-                 <Card className="border-amber-100 shadow-sm">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Unit Volume</CardTitle>
-                    <ShoppingCart className="h-4 w-4 text-amber-500" />
-                  </CardHeader>
-                  <CardContent>
+                    <p className="text-xs text-slate-500 mt-1">{customers.length} Contacts total</p>
+                  </div>
+                  <div className="p-5">
+                    <div className="flex items-center gap-2 mb-2">
+                       <ShoppingCart className="h-4 w-4 text-amber-500" />
+                       <span className="text-xs font-semibold text-slate-500">Unit Volume</span>
+                    </div>
                     <div className="text-2xl font-black text-slate-900 tabular-nums">{totalItemsSold.toLocaleString()}</div>
-                    <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">Lifetime units sold</p>
-                  </CardContent>
-                </Card>
-              </>
+                    <p className="text-xs text-slate-500 mt-1">Lifetime units sold</p>
+                  </div>
+                </div>
+              </Card>
             )}
 
             {widget.id === 'top_products' && (
@@ -278,18 +264,18 @@ export const Dashboard = () => {
                           <div className="space-y-0.5">
                             <p className="text-sm font-bold text-slate-900 truncate max-w-[150px]">{customer?.company || customer?.name}</p>
                             <div className="flex items-center gap-2">
-                              <span className={`text-[10px] font-bold uppercase ${order.status === 'Cancelled' ? 'text-rose-500' : 'text-emerald-500'}`}>{order.status}</span>
-                              <span className="text-[9px] text-slate-400 font-mono">{order.date}</span>
+                              <span className={`text-xs font-semibold ${order.status === 'Cancelled' ? 'text-rose-600' : 'text-emerald-600'}`}>{order.status}</span>
+                              <span className="text-xs text-slate-500">{order.date}</span>
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-1">
-                            <div className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-full group-hover:bg-white transition-colors">
+                            <div className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded-full group-hover:bg-white transition-colors">
                               {order.items.reduce((s, i) => s + i.quantity, 0)} units
                             </div>
                             {order.items.length > 0 && (() => {
                               const product = products.find(p => p.id === order.items[0].productId);
                               return (
-                                <span className="text-[10px] text-slate-400 font-medium truncate max-w-[100px]">
+                                <span className="text-xs text-slate-500 truncate max-w-[120px]">
                                   {product?.name || 'Item'}
                                   {order.items.length > 1 ? ` + ${order.items.length - 1} more` : ''}
                                 </span>
@@ -333,14 +319,14 @@ export const Dashboard = () => {
                     </ResponsiveContainer>
                     <div className="absolute flex flex-col items-center justify-center pointer-events-none">
                       <span className="text-2xl font-black text-slate-900">{customers.length}</span>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Leads</span>
+                      <span className="text-xs text-slate-500 font-medium">Leads</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2">
                      {pipelineData.slice(0, 4).map((d, i) => (
                        <div key={d.name} className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>
-                          <span className="text-[10px] text-slate-500 font-medium truncate">{d.name}</span>
+                          <span className="text-xs text-slate-600 truncate">{d.name}</span>
                        </div>
                      ))}
                   </div>
@@ -361,11 +347,11 @@ export const Dashboard = () => {
                       <div key={p.id} className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                           <p className="text-xs font-bold text-slate-900">{p.name}</p>
-                          <p className="text-[10px] font-mono text-rose-500 font-bold uppercase tracking-widest">{p.status}</p>
+                          <p className="text-xs font-medium text-rose-600">{p.status}</p>
                         </div>
                         <div className="text-right">
                            <div className="text-sm font-black text-slate-900">{p.stock}</div>
-                           <div className="text-[9px] text-slate-400 uppercase font-bold">{p.unit} left</div>
+                           <div className="text-xs text-slate-500">{p.unit} left</div>
                         </div>
                       </div>
                     ))}
@@ -395,7 +381,7 @@ export const Dashboard = () => {
                     {taskStats.map((stat) => (
                       <div key={stat.name} className="space-y-3">
                          <div className="flex items-center justify-between px-1">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{stat.name}</span>
+                            <span className="text-xs font-medium text-slate-600">{stat.name}</span>
                             <span className="text-xs font-black text-slate-900">{stat.value}</span>
                          </div>
                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -418,15 +404,7 @@ export const Dashboard = () => {
         })}
       </div>
       
-      <div className="flex items-center gap-3 p-4 bg-slate-900 text-white rounded-xl shadow-lg border border-slate-800">
-        <div className="p-2 bg-emerald-500 rounded-lg">
-          <HistoryIcon className="h-5 w-5 text-slate-900" />
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Pro Tip</p>
-          <p className="text-sm text-slate-300">You can customize this layout by clicking the <Settings2 className="inline h-4 w-4 mx-1" /> icon. Your preferences are saved locally for consistency.</p>
-        </div>
-      </div>
+      {/* Removed Pro Tip banner */}
     </div>
   );
 };

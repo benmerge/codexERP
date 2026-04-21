@@ -183,18 +183,18 @@ app.post('/api/email/won', async (req, res) => {
 // 4. Send Email on Order Status Change
 app.post('/api/email/order-status', async (req, res) => {
   try {
-    const { email, customerName, orderId, status } = req.body;
+    const { email, salesRepEmail, customerName, orderId, status } = req.body;
     
     if (!email) {
       return res.status(400).json({ success: false, error: 'No email provided' });
     }
 
     if (!resend) {
-      console.log(`[Mock Email] To: ${[email, ...orderStatusInternalEmails].join(', ')}, Subject: Order ${orderId} Status Update: ${status}`);
+      console.log(`[Mock Email] To: ${[email, salesRepEmail, ...orderStatusInternalEmails].filter(Boolean).join(', ')}, Subject: Order ${orderId} Status Update: ${status}`);
       return res.json({ success: true, message: 'Mock email sent (No API key)' });
     }
 
-    const recipients = Array.from(new Set([email, ...orderStatusInternalEmails]));
+    const recipients = Array.from(new Set([email, salesRepEmail, ...orderStatusInternalEmails].filter(Boolean)));
     const data = await resend.emails.send({
       from: orderStatusFromEmail,
       to: recipients,

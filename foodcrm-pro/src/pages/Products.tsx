@@ -227,7 +227,9 @@ export const Products = () => {
           <Button
             type="button"
             variant="outline"
-            onClick={importFinishedGoods}
+            onClick={() => {
+              void importFinishedGoods();
+            }}
             disabled={isImporting}
             className="border-slate-200"
           >

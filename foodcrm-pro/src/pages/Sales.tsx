@@ -37,25 +37,22 @@ export const Sales = () => {
            o.id.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
-  const getStatusColor = (status: string) => {
+  const getStatusDotColor = (status: string) => {
     switch(status) {
-      case 'Delivered': return 'bg-emerald-100 text-emerald-800';
-      case 'Shipped': return 'bg-blue-100 text-blue-800';
-      case 'Order placed': return 'bg-amber-100 text-amber-800';
-      case 'Cancelled': return 'bg-rose-100 text-rose-800';
-      default: return 'bg-slate-100 text-slate-800';
+      case 'Delivered': return 'bg-emerald-500';
+      case 'Shipped': return 'bg-blue-500';
+      case 'Order placed': return 'bg-amber-500';
+      case 'Cancelled': return 'bg-rose-500';
+      default: return 'bg-slate-400';
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
         <div className="flex items-center gap-3">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Sales & Orders</h2>
-            <p className="text-slate-500">Track ecosystem demand and logistics.</p>
-          </div>
-          <Badge variant="outline" className="text-[10px] font-bold uppercase bg-slate-50 border-slate-200">
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Sales & Orders</h2>
+          <Badge variant="outline" className="text-xs font-medium bg-slate-50 border-slate-200">
             {orders.length} Records
           </Badge>
         </div>
@@ -114,7 +111,7 @@ export const Sales = () => {
                       <TableRow key={order.id} className="hover:bg-slate-50">
                         <TableCell>
                           <div className="font-medium">{order.id.toUpperCase()}</div>
-                          <div className="text-[10px] uppercase font-bold text-slate-400">
+                          <div className="text-xs text-slate-500">
                             {order.source || 'Manual'}
                           </div>
                         </TableCell>
@@ -129,29 +126,23 @@ export const Sales = () => {
                         </TableCell>
                         <TableCell className="text-right font-black text-slate-900 tabular-nums">
                           {itemCount}
-                          <span className="text-[9px] ml-1 text-slate-400 font-bold uppercase tracking-widest block sm:inline">Units</span>
+                          <span className="text-xs ml-1 text-slate-500 block sm:inline">Units</span>
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col gap-1 w-full max-w-[280px]">
-                            {order.items?.slice(0, 3).map((item, idx) => {
-                              const product = products.find(p => p.id === item.productId);
-                              return (
-                                <div key={idx} className="text-xs overflow-hidden">
-                                  <span className="truncate text-slate-500 block">{product?.name || item.productId}</span>
-                                </div>
-                              );
-                            })}
-                            {order.items?.length > 3 && (
-                              <div className="text-[9px] text-slate-400 font-medium italic">
-                                + {order.items.length - 3} more line items...
-                              </div>
-                            )}
+                          {order.items?.length > 0 ? (
+                            <div className="text-sm text-slate-600 truncate max-w-[240px]">
+                              {products.find(p => p.id === order.items[0].productId)?.name || 'Item'}
+                              {order.items.length > 1 ? <span className="text-slate-400 ml-1">(+{order.items.length - 1} more)</span> : null}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full ${getStatusDotColor(order.status)}`} />
+                            <span className="text-sm font-medium text-slate-700">{order.status}</span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={`border-none ${getStatusColor(order.status)}`}>
-                            {order.status}
-                          </Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => setViewingOrder(order)}>

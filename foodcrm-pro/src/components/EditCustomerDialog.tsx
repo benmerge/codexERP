@@ -198,9 +198,8 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
         email,
         phone,
         salesRepId,
-        salesRepName: salesRep?.displayName || salesRep?.email || 'Assigned rep',
-        salesRepEmail: salesRep?.email,
-        isProspect: customer.isProspect && customer.pipelineStage !== 'Closed Won' && customer.pipelineStage !== 'Closed Lost',
+        salesRepName: salesRepId ? (salesRep?.displayName || salesRep?.email || (salesRepId === customer.salesRepId ? customer.salesRepName : '')) : '',
+        salesRepEmail: salesRepId ? (salesRep?.email || (salesRepId === customer.salesRepId ? customer.salesRepEmail : '')) : '',
         category,
         monthlySalesVolume: monthlySalesVolume === '' ? undefined : Number(monthlySalesVolume),
         notes
@@ -234,11 +233,12 @@ export const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({ customer
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Account Rep</Label>
-              <Select value={salesRepId} onValueChange={setSalesRepId}>
+              <Select value={salesRepId || 'unassigned'} onValueChange={(v) => setSalesRepId(v === 'unassigned' ? '' : v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a rep" />
+                  <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {salesRepOptions.map((rep) => (
                     <SelectItem key={rep.id} value={rep.id}>
                       {rep.displayName || rep.email || 'Assigned rep'}
