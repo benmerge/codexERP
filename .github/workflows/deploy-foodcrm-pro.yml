@@ -34,8 +34,4 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy foodcrm-pro \
-            --source . \
-            --region ${{ secrets.GCP_REGION }} \
-            --project ${{ secrets.GCP_PROJECT_ID }} \
-            --allow-unauthenticated
+          gcloud run deploy foodcrm-pro --source . --region "${{ secrets.GCP_REGION }}" --project "${{ secrets.GCP_PROJECT_ID }}" --allow-unauthenticated
