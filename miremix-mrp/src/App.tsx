@@ -321,7 +321,7 @@ export default function App() {
         />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-[296px] -translate-x-full bg-[radial-gradient(circle_at_top,_rgba(244,182,63,0.14),_transparent_24%),linear-gradient(180deg,_var(--color-bg-side),_var(--color-bg-side-soft))] text-white flex flex-col shrink-0 border-r border-white/6 transition-transform duration-200 lg:static lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : ''}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[296px] -translate-x-full overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_top,_rgba(244,182,63,0.14),_transparent_24%),linear-gradient(180deg,_var(--color-bg-side),_var(--color-bg-side-soft))] text-white flex flex-col shrink-0 border-r border-white/6 transition-transform duration-200 lg:static lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : ''}`}>
         <div className="px-6 py-8 flex flex-col items-start gap-4 border-b border-white/8">
           <div className="flex w-full items-center justify-between lg:hidden">
             <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-200/70">Navigation</span>
