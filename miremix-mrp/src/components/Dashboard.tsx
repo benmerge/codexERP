@@ -22,11 +22,20 @@ export function Dashboard({ locationId }: { locationId: string }) {
   const [loading, setLoading] = useState(true);
   const [syncingOrders, setSyncingOrders] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+  const [inventoryReady, setInventoryReady] = useState(false);
+  const [recipesReady, setRecipesReady] = useState(false);
+  const [ordersReady, setOrdersReady] = useState(false);
   const queueRef = useRef<HTMLDivElement | null>(null);
   const alertsRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!locationId) return;
+
+    setLoading(true);
+    setInventoryReady(false);
+    setRecipesReady(false);
+    setOrdersReady(false);
+    setStatus(null);
 
     // Inventory listener
     const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
@@ -48,9 +57,17 @@ export function Dashboard({ locationId }: { locationId: string }) {
         items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
       }
       setInventory(items);
-      setLoading(false);
+      setInventoryReady(true);
     }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'inventory');
+      console.error(err);
+      setInventory([]);
+      setInventoryReady(true);
+      setStatus({ type: 'error', msg: 'Inventory feed could not be loaded for this workspace.' });
+      try {
+        handleFirestoreError(err, OperationType.LIST, 'inventory');
+      } catch (loggedError) {
+        console.error(loggedError);
+      }
     });
 
     // Recipes listener (for most used ingredient calculation)
@@ -62,6 +79,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
           : i.locationId === locationId || !i.locationId || (!i.locationId && locationId === 'default')
       );
       setRecipes(items);
+      setRecipesReady(true);
     });
 
     // Logs listener for usage metrics
@@ -81,15 +99,33 @@ export function Dashboard({ locationId }: { locationId: string }) {
     const unsubOrders = crmService.subscribeToOpenOrders((newOrders) => {
       setOrders(newOrders);
       setSyncingOrders(false);
+      setOrdersReady(true);
     });
+
+    const ordersSafetyTimer = window.setTimeout(() => {
+      setOrdersReady((current) => {
+        if (!current) {
+          setSyncingOrders(false);
+          setStatus((existing) => existing ?? { type: 'error', msg: 'CRM order sync is unavailable right now.' });
+        }
+        return true;
+      });
+    }, 4000);
 
     return () => {
       unsubInv();
       unsubRec();
       unsubLogs();
       unsubOrders();
+      window.clearTimeout(ordersSafetyTimer);
     };
   }, [locationId]);
+
+  useEffect(() => {
+    if (inventoryReady && recipesReady && ordersReady) {
+      setLoading(false);
+    }
+  }, [inventoryReady, recipesReady, ordersReady]);
 
   const handleShipOrder = async (orderId: string, rawId?: string) => {
     const targetId = rawId || orderId;
