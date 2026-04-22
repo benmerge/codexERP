@@ -14,7 +14,7 @@ import {
   getDefaultToolRegistryEntries,
   getToolTitle,
   type ToolRegistryEntry,
-} from '@platform/tools';
+} from '../platform/tools';
 import { canManagePlatform } from '../platform/shared';
 
 type ToolDraft = ToolRegistryEntry & {

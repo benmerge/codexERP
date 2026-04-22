@@ -66,7 +66,7 @@ export const getDefaultToolRegistryEntries = (tools: {
     sortOrder,
   }));
 
-export const getToolTitle = (tool: Pick<PlatformTool, 'id' | 'name' | 'title'>) =>
+export const getToolTitle = (tool: { id: string; name?: string; title?: string }) =>
   resolveToolTitle(tool.title, tool.name, tool.id);
 
 export const mergeToolsWithRegistry = (defaults: PlatformTool[], registry: ToolRegistryEntry[]) => {

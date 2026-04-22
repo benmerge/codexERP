@@ -6,5 +6,5 @@ import { crmAppConfig } from './config';
 
 const app = initializeApp(firebaseWebConfig);
 export const db = getFirestore(app, firebaseDatabaseId);
-export const miremixDb = getFirestore(app, crmAppConfig.miremixFirestoreDatabaseId);
+export const miremixDb = getFirestore(app, crmAppConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
