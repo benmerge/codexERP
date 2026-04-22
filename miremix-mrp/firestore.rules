@@ -116,6 +116,19 @@ service cloud.firestore {
              (!('sourceApp' in data) || data.sourceApp is string);
     }
 
+    function isValidCanonicalLog(data, orgId, logId) {
+      return data.id is string &&
+             data.id == logId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.recipeName is string &&
+             data.multiplier is number &&
+             data.timestamp is string &&
+             (!('locationId' in data) || data.locationId is string) &&
+             (!('userName' in data) || data.userName is string) &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
     // Orders (from CRM)
     match /orders/{id} {
       allow read: if is40CenturyGrain();
@@ -187,6 +200,12 @@ service cloud.firestore {
     match /logs/{id} {
       allow read: if is40CenturyGrain();
       allow create: if is40CenturyGrain() && isValidLog(request.resource.data);
+    }
+
+    match /orgs/{orgId}/logs/{logId} {
+      allow read: if is40CenturyGrain();
+      allow create, update: if is40CenturyGrain() &&
+                               isValidCanonicalLog(request.resource.data, orgId, logId);
     }
   }
 }

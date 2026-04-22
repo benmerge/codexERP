@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { ShoppingBag, AlertTriangle, ExternalLink, Scale, History, Loader2, CheckCircle2, TrendingUp, Package } from 'lucide-react';
-import { collection, onSnapshot, query, where, limit, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
+import { limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { crmService, type CRMOrder } from '../services/crmService';
 import { type Ingredient, type Recipe } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { normalizeIngredient } from '../lib/inventoryCategories';
-import { subscribeToPlatformCollection } from '../lib/platformData';
+import { getOrgCollectionRef, subscribeToPlatformCollection } from '../lib/platformData';
 
 interface BatchLog {
   id: string;
@@ -98,7 +97,7 @@ export function Dashboard({ locationId }: { locationId: string }) {
     });
 
     // Logs listener for usage metrics
-    const unsubLogs = onSnapshot(query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(150)), (snapshot) => {
+    const unsubLogs = onSnapshot(query(getOrgCollectionRef('logs'), orderBy('timestamp', 'desc'), limit(150)), (snapshot) => {
       let logItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
       logItems = logItems.filter((l) =>
         locationId === 'all'
@@ -107,6 +106,9 @@ export function Dashboard({ locationId }: { locationId: string }) {
       );
       // enforce manual slice to 50 max
       setLogs(logItems.slice(0, 50));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'logs');
+      setLogs([]);
     });
 
     // CRM Orders listener

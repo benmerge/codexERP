@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react';
 import { type Recipe, type Ingredient } from '../types';
 import { CheckCircle2, AlertTriangle, Scale, ArrowRight, Loader2, History, ShoppingBag, ExternalLink } from 'lucide-react';
-import { collection, onSnapshot, query, addDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
+import { doc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { normalizeIngredient } from '../lib/inventoryCategories';
 import { crmService, type CRMOrder } from '../services/crmService';
-import { subscribeToPlatformCollection } from '../lib/platformData';
+import {
+  getLegacyCollectionRef,
+  getLegacyDocRef,
+  getOrgDocRef,
+  subscribeToPlatformCollection,
+  writePlatformRecord,
+} from '../lib/platformData';
 
 const convertMeasurement = (amount: number, fromUnit: string, toUnit: string) => {
   const from = fromUnit.toLowerCase();
@@ -133,11 +139,12 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       // Deduct Ingredients
       requirements.forEach(req => {
         if (!req.inventoryDocId) return;
-        const docRef = doc(db, 'inventory', req.inventoryDocId);
-        batch.update(docRef, {
+        const updatePayload = {
           quantityOnHand: Number((req.onHand - req.requiredInInvUnit).toFixed(4)),
           lastUpdated: new Date().toISOString()
-        });
+        };
+        batch.update(getOrgDocRef('inventory', req.inventoryDocId), updatePayload);
+        batch.update(getLegacyDocRef('inventory', req.inventoryDocId), updatePayload);
       });
 
       // Increment Finished Good
@@ -146,14 +153,16 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
         (i.id === selectedRecipe.finishedGoodId || i.name === selectedRecipeName)
       );
       if (targetFinishedGood && targetFinishedGood.id) {
-        const fgRef = doc(db, 'inventory', targetFinishedGood.id);
-        batch.update(fgRef, {
+        const updatePayload = {
           quantityOnHand: Number(((targetFinishedGood.quantityOnHand || 0) + batchMultiplier).toFixed(4)),
           lastUpdated: new Date().toISOString()
-        });
+        };
+        batch.update(getOrgDocRef('inventory', targetFinishedGood.id), updatePayload);
+        batch.update(getLegacyDocRef('inventory', targetFinishedGood.id), updatePayload);
       }
 
-      await addDoc(collection(db, 'logs'), {
+      const logRef = doc(getLegacyCollectionRef('logs'));
+      await writePlatformRecord('logs', logRef.id, {
         recipeName: selectedRecipeName,
         multiplier: batchMultiplier,
         timestamp: new Date().toISOString(),
