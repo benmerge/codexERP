@@ -244,6 +244,30 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt is string);
     }
 
+    function isValidCanonicalCustomer(data, orgId, customerId) {
+      return isValidCustomer(data) &&
+             data.id == customerId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
+    function isValidCanonicalTask(data, orgId, taskId) {
+      return isValidTask(data) &&
+             data.id == taskId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
+    function isValidCanonicalProduct(data, orgId, productId) {
+      return isValidProduct(data) &&
+             data.id == productId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -277,6 +301,30 @@ service cloud.firestore {
                                  isValidOrgMember(request.resource.data, orgId, memberId) &&
                                  (isOrgAdmin(orgId) || requesterOrgId() == orgId || request.auth.uid == memberId);
         allow delete: if isOrgAdmin(orgId) || isPlatformAdmin();
+      }
+
+      match /customers/{customerId} {
+        allow read: if isOrgMember(orgId) || isAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCanonicalCustomer(request.resource.data, orgId, customerId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isOrgMember(orgId) || isAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCanonicalTask(request.resource.data, orgId, taskId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /products/{productId} {
+        allow read: if isOrgMember(orgId) || isAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCanonicalProduct(request.resource.data, orgId, productId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
       }
     }
 

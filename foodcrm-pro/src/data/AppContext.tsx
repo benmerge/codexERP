@@ -127,6 +127,10 @@ function removeUndefined(obj: any) {
   return Object.fromEntries(Object.entries(obj).filter(([_, v]) => v !== undefined));
 }
 
+const getLegacyCollectionPath = (orgId: string, collectionName: string) => `users/${orgId}/${collectionName}`;
+
+const getOrgCollectionPath = (orgId: string, collectionName: string) => `orgs/${orgId}/${collectionName}`;
+
 export const normalizeRepData = <T extends { salesRepId?: string, salesRepName?: string, salesRepEmail?: string }>(record: T): T => {
   let { salesRepId, salesRepName, salesRepEmail } = record;
   const looksLikeUid = (value?: string) =>
@@ -286,6 +290,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    const subscribeToCanonicalCollection = <T,>(
+      collectionName: string,
+      mapDoc: (entry: any) => T,
+      onData: (items: T[]) => void
+    ) =>
+      onSnapshot(
+        collection(db, getOrgCollectionPath(dataId, collectionName)),
+        async (snapshot) => {
+          if (snapshot.empty) {
+            try {
+              const legacySnapshot = await getDocs(collection(db, getLegacyCollectionPath(dataId, collectionName)));
+              if (!legacySnapshot.empty) {
+                const batch = writeBatch(db);
+                legacySnapshot.docs.forEach((entry) => {
+                  batch.set(
+                    doc(db, getOrgCollectionPath(dataId, collectionName), entry.id),
+                    removeUndefined({
+                      id: entry.id,
+                      ...entry.data(),
+                      orgId: dataId,
+                      sourceApp: 'foodcrm-pro',
+                    }),
+                    { merge: true }
+                  );
+                });
+                await batch.commit();
+                return;
+              }
+            } catch (legacyError) {
+              handleFirestoreError(legacyError, OperationType.LIST, getLegacyCollectionPath(dataId, collectionName));
+            }
+
+            onData([]);
+            return;
+          }
+
+          onData(snapshot.docs.map(mapDoc));
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, getOrgCollectionPath(dataId, collectionName));
+        }
+      );
+
     const userRef = doc(db, 'users', dataId);
     const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -293,27 +340,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
-    const customersRef = collection(db, `users/${dataId}/customers`);
-    const unsubscribeCustomers = onSnapshot(customersRef, (snapshot) => {
-      const loadedCustomers: Customer[] = [];
-      snapshot.forEach(doc => {
-        loadedCustomers.push(normalizeRepData({ ...doc.data(), id: doc.id } as Customer));
-      });
+    const unsubscribeCustomers = subscribeToCanonicalCollection<Customer>(
+      'customers',
+      (entry) => normalizeRepData({ ...entry.data(), id: entry.id } as Customer),
+      (loadedCustomers) => {
       setCustomers(loadedCustomers);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${dataId}/customers`);
-    });
+      }
+    );
 
-    const tasksRef = collection(db, `users/${dataId}/tasks`);
-    const unsubscribeTasks = onSnapshot(tasksRef, (snapshot) => {
-      const loadedTasks: Task[] = [];
-      snapshot.forEach(doc => {
-        loadedTasks.push({ ...doc.data(), id: doc.id } as Task);
-      });
+    const unsubscribeTasks = subscribeToCanonicalCollection<Task>(
+      'tasks',
+      (entry) => ({ ...entry.data(), id: entry.id } as Task),
+      (loadedTasks) => {
       setTasks(loadedTasks);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${dataId}/tasks`);
-    });
+      }
+    );
 
     const ordersRef = collection(db, `users/${dataId}/orders`);
     const unsubscribeOrders = onSnapshot(ordersRef, (snapshot) => {
@@ -342,16 +383,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       handleFirestoreError(error, OperationType.LIST, `users/${dataId}/orders`);
     });
 
-    const productsRef = collection(db, `users/${dataId}/products`);
-    const unsubscribeProducts = onSnapshot(productsRef, (snapshot) => {
-      const loadedProducts: Product[] = [];
-      snapshot.forEach(doc => {
-        loadedProducts.push({ ...doc.data(), id: doc.id } as Product);
-      });
+    const unsubscribeProducts = subscribeToCanonicalCollection<Product>(
+      'products',
+      (entry) => ({ ...entry.data(), id: entry.id } as Product),
+      (loadedProducts) => {
       setProducts(loadedProducts);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${dataId}/products`);
-    });
+      }
+    );
 
     const suppliersRef = collection(db, `users/${dataId}/suppliers`);
     const unsubscribeSuppliers = onSnapshot(suppliersRef, (snapshot) => {
@@ -520,7 +558,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/customers`, customer.id), customerWithUid);
+      await Promise.all([
+        setDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), customerWithUid),
+        setDoc(
+          doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
+          removeUndefined({ ...customerWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+        ),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/customers/${customer.id}`);
     }
@@ -532,7 +576,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       for (const customer of newCustomers) {
         const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
-        await setDoc(doc(db, `users/${dataId}/customers`, customer.id), customerWithUid);
+        await Promise.all([
+          setDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), customerWithUid),
+          setDoc(
+            doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
+            removeUndefined({ ...customerWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+          ),
+        ]);
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/customers (bulk)`);
@@ -544,7 +594,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/customers`, customer.id), customerWithUid);
+      await Promise.all([
+        setDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), customerWithUid),
+        setDoc(
+          doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
+          removeUndefined({ ...customerWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+        ),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/customers/${customer.id}`);
     }
@@ -554,7 +610,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const dataId = getDataId(user);
     if (!dataId) return;
     try {
-      await deleteDoc(doc(db, `users/${dataId}/customers`, customerId));
+      await Promise.all([
+        deleteDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customerId)),
+        deleteDoc(doc(db, getOrgCollectionPath(dataId, 'customers'), customerId)),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${dataId}/customers/${customerId}`);
     }
@@ -597,7 +656,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const productWithUid = removeUndefined({ ...product, uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/products`, product.id), productWithUid);
+      await Promise.all([
+        setDoc(doc(db, getLegacyCollectionPath(dataId, 'products'), product.id), productWithUid),
+        setDoc(
+          doc(db, getOrgCollectionPath(dataId, 'products'), product.id),
+          removeUndefined({ ...productWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+        ),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/products/${product.id}`);
     }
@@ -608,7 +673,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const productWithUid = removeUndefined({ ...product, uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/products`, product.id), productWithUid);
+      await Promise.all([
+        setDoc(doc(db, getLegacyCollectionPath(dataId, 'products'), product.id), productWithUid),
+        setDoc(
+          doc(db, getOrgCollectionPath(dataId, 'products'), product.id),
+          removeUndefined({ ...productWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+        ),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/products/${product.id}`);
     }
@@ -618,7 +689,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const dataId = getDataId(user);
     if (!dataId) return;
     try {
-      await deleteDoc(doc(db, `users/${dataId}/products`, productId));
+      await Promise.all([
+        deleteDoc(doc(db, getLegacyCollectionPath(dataId, 'products'), productId)),
+        deleteDoc(doc(db, getOrgCollectionPath(dataId, 'products'), productId)),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${dataId}/products/${productId}`);
     }
@@ -661,7 +735,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const taskWithUid = removeUndefined({ ...task, uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/tasks`, task.id), taskWithUid);
+      await Promise.all([
+        setDoc(doc(db, getLegacyCollectionPath(dataId, 'tasks'), task.id), taskWithUid),
+        setDoc(
+          doc(db, getOrgCollectionPath(dataId, 'tasks'), task.id),
+          removeUndefined({ ...taskWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+        ),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/tasks/${task.id}`);
     }
@@ -672,7 +752,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const taskWithUid = removeUndefined({ ...task, uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/tasks`, task.id), taskWithUid);
+      await Promise.all([
+        setDoc(doc(db, getLegacyCollectionPath(dataId, 'tasks'), task.id), taskWithUid),
+        setDoc(
+          doc(db, getOrgCollectionPath(dataId, 'tasks'), task.id),
+          removeUndefined({ ...taskWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
+        ),
+      ]);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/tasks/${task.id}`);
     }
@@ -700,16 +786,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const seedBatch = writeBatch(db);
 
       initialCustomers.forEach((customer) => {
+        const payload = removeUndefined({ ...customer, uid: dataId });
+        seedBatch.set(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), payload);
         seedBatch.set(
-          doc(db, `users/${dataId}/customers`, customer.id),
-          removeUndefined({ ...customer, uid: dataId })
+          doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
+          removeUndefined({ ...payload, orgId: dataId, sourceApp: 'foodcrm-pro' })
         );
       });
 
       initialProducts.forEach((product) => {
+        const payload = removeUndefined({ ...product, uid: dataId });
+        seedBatch.set(doc(db, getLegacyCollectionPath(dataId, 'products'), product.id), payload);
         seedBatch.set(
-          doc(db, `users/${dataId}/products`, product.id),
-          removeUndefined({ ...product, uid: dataId })
+          doc(db, getOrgCollectionPath(dataId, 'products'), product.id),
+          removeUndefined({ ...payload, orgId: dataId, sourceApp: 'foodcrm-pro' })
         );
       });
 
@@ -721,9 +811,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
       initialTasks.forEach((task) => {
+        const payload = removeUndefined({ ...task, uid: dataId });
+        seedBatch.set(doc(db, getLegacyCollectionPath(dataId, 'tasks'), task.id), payload);
         seedBatch.set(
-          doc(db, `users/${dataId}/tasks`, task.id),
-          removeUndefined({ ...task, uid: dataId })
+          doc(db, getOrgCollectionPath(dataId, 'tasks'), task.id),
+          removeUndefined({ ...payload, orgId: dataId, sourceApp: 'foodcrm-pro' })
         );
       });
 
