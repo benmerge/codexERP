@@ -5,12 +5,18 @@ import { Inventory } from './components/Inventory';
 import { Recipes } from './components/Recipes';
 import { BatchMixBuilder } from './components/BatchCalculator';
 import { auth, login, logout, onAuthStateChanged, type User, db } from './firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch, deleteField } from 'firebase/firestore';
+import { getDocs, onSnapshot, query, writeBatch, deleteField, doc } from 'firebase/firestore';
 import { type LocationDef } from './types';
 import { crmConfig } from './config';
 import { SHARED_WORKSPACE_DOMAINS, canManageLocations, isSharedWorkspaceUser } from '@platform/shared';
-
-const PLATFORM_LOCATION_SOURCE = 'miremix-mrp';
+import {
+  getLegacyCollectionRef,
+  getLegacyDocRef,
+  getOrgCollectionRef,
+  getOrgDocRef,
+  withPlatformMetadata,
+  writePlatformRecord,
+} from './lib/platformData';
 
 const normalizeLocation = (locationId: string, data: Partial<LocationDef>): LocationDef => ({
   id: locationId,
@@ -25,8 +31,6 @@ const normalizeLocation = (locationId: string, data: Partial<LocationDef>): Loca
 
 const sortLocations = (items: LocationDef[]) =>
   [...items].sort((left, right) => left.name.localeCompare(right.name));
-
-const PLATFORM_SETTINGS_SOURCE = 'miremix-mrp';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -63,24 +67,17 @@ export default function App() {
     const orgBrandingRef = doc(db, 'orgs', crmConfig.sharedOrgId, 'settings', 'branding');
 
     const writeBrandingRecord = async (clientLogoValue: string) => {
-      const brandingRecord = {
+      await writePlatformRecord('settings', 'branding', {
         clientLogo: clientLogoValue,
-        orgId: crmConfig.sharedOrgId,
-        sourceApp: PLATFORM_SETTINGS_SOURCE,
         updatedAt: new Date().toISOString(),
-      };
-
-      await Promise.all([
-        setDoc(orgBrandingRef, brandingRecord, { merge: true }),
-        setDoc(doc(db, 'settings', 'branding'), brandingRecord, { merge: true }),
-      ]);
+      }, { merge: true });
     };
 
     const hydrateCanonicalBranding = async () => {
       if (hasHydratedCanonicalBrandingRef.current) return;
       hasHydratedCanonicalBrandingRef.current = true;
 
-      const legacySnapshot = await getDocs(query(collection(db, 'settings')));
+      const legacySnapshot = await getDocs(query(getLegacyCollectionRef('settings')));
       const brandingDoc = legacySnapshot.docs.find((entry) => entry.id === 'branding');
       const legacyLogo = brandingDoc?.data().clientLogo;
 
@@ -103,26 +100,17 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const orgLocationsRef = collection(db, 'orgs', crmConfig.sharedOrgId, 'locations');
+    const orgLocationsRef = getOrgCollectionRef('locations');
 
     const writeLocationToPlatform = async (location: LocationDef) => {
-      const platformLocation = {
-        ...location,
-        orgId: crmConfig.sharedOrgId,
-        sourceApp: PLATFORM_LOCATION_SOURCE,
-      };
-
-      await Promise.all([
-        setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id), platformLocation, { merge: true }),
-        setDoc(doc(db, 'locations', location.id), platformLocation, { merge: true }),
-      ]);
+      await writePlatformRecord('locations', location.id, { ...location }, { merge: true });
     };
 
     const hydrateCanonicalLocations = async () => {
       if (hasHydratedCanonicalLocationsRef.current) return;
       hasHydratedCanonicalLocationsRef.current = true;
 
-      const legacySnapshot = await getDocs(query(collection(db, 'locations')));
+      const legacySnapshot = await getDocs(query(getLegacyCollectionRef('locations')));
       const legacyLocations = sortLocations(
         legacySnapshot.docs.map((entry) => normalizeLocation(entry.id, entry.data() as Partial<LocationDef>))
       );
@@ -132,7 +120,6 @@ export default function App() {
           id: 'default',
           name: 'Main Facility',
           orgId: crmConfig.sharedOrgId,
-          sourceApp: PLATFORM_LOCATION_SOURCE,
           isActive: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -145,15 +132,11 @@ export default function App() {
 
       const batch = writeBatch(db);
       legacyLocations.forEach((location) => {
-        batch.set(
-          doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id),
-          {
-            ...location,
-            orgId: crmConfig.sharedOrgId,
-            sourceApp: location.sourceApp ?? PLATFORM_LOCATION_SOURCE,
-          },
-          { merge: true }
-        );
+        const payload = withPlatformMetadata({
+          ...location,
+          sourceApp: location.sourceApp,
+        });
+        batch.set(getOrgDocRef('locations', location.id), payload, { merge: true });
       });
       await batch.commit();
     };
@@ -178,16 +161,7 @@ export default function App() {
   }, [user, activeLocationId]);
 
   const writeLocationRecord = async (location: LocationDef) => {
-    const platformLocation = {
-      ...location,
-      orgId: crmConfig.sharedOrgId,
-      sourceApp: PLATFORM_LOCATION_SOURCE,
-    };
-
-    await Promise.all([
-      setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id), platformLocation, { merge: true }),
-      setDoc(doc(db, 'locations', location.id), platformLocation, { merge: true }),
-    ]);
+    await writePlatformRecord('locations', location.id, { ...location }, { merge: true });
   };
 
   const handleCreateLocation = async () => {
@@ -198,8 +172,6 @@ export default function App() {
       await writeLocationRecord({
         id: locId,
         name: newLocName.trim(),
-        orgId: crmConfig.sharedOrgId,
-        sourceApp: PLATFORM_LOCATION_SOURCE,
         isActive: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -208,21 +180,34 @@ export default function App() {
       if (activeLocationId !== 'all') {
         const batch = writeBatch(db);
 
-        const invSnap = await getDocs(query(collection(db, 'inventory')));
+        const invSnap = await getDocs(query(getOrgCollectionRef('inventory')));
         invSnap.docs.forEach((d) => {
           const data = d.data();
           if (data.locationId === activeLocationId || (!data.locationId && activeLocationId === 'default')) {
-            const newDocRef = doc(collection(db, 'inventory'));
-            batch.set(newDocRef, { ...data, id: newDocRef.id, locationId: locId, quantityOnHand: 0 });
+            const newDocRef = doc(getLegacyCollectionRef('inventory'));
+            const payload = withPlatformMetadata({
+              ...data,
+              id: newDocRef.id,
+              locationId: locId,
+              quantityOnHand: 0,
+            });
+            batch.set(getOrgDocRef('inventory', newDocRef.id), payload);
+            batch.set(getLegacyDocRef('inventory', newDocRef.id), payload);
           }
         });
 
-        const recSnap = await getDocs(query(collection(db, 'recipes')));
+        const recSnap = await getDocs(query(getOrgCollectionRef('recipes')));
         recSnap.docs.forEach((d) => {
           const data = d.data();
           if (data.locationId === activeLocationId || !data.locationId) {
-            const newDocRef = doc(collection(db, 'recipes'));
-            batch.set(newDocRef, { ...data, id: newDocRef.id, locationId: locId });
+            const newDocRef = doc(getLegacyCollectionRef('recipes'));
+            const payload = withPlatformMetadata({
+              ...data,
+              id: newDocRef.id,
+              locationId: locId,
+            });
+            batch.set(getOrgDocRef('recipes', newDocRef.id), payload);
+            batch.set(getLegacyDocRef('recipes', newDocRef.id), payload);
           }
         });
 
@@ -266,26 +251,17 @@ export default function App() {
     const nextActive = location.isActive === false;
 
     try {
-      await Promise.all([
-        setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id), {
-          id: location.id,
-          name: location.name,
-          orgId: crmConfig.sharedOrgId,
-          sourceApp: PLATFORM_LOCATION_SOURCE,
-          isActive: nextActive,
-          updatedAt: new Date().toISOString(),
-          deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
-        }, { merge: true }),
-        setDoc(doc(db, 'locations', location.id), {
-          id: location.id,
-          name: location.name,
-          orgId: crmConfig.sharedOrgId,
-          sourceApp: PLATFORM_LOCATION_SOURCE,
-          isActive: nextActive,
-          updatedAt: new Date().toISOString(),
-          deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
-        }, { merge: true }),
-      ]);
+      const payload = withPlatformMetadata({
+        id: location.id,
+        name: location.name,
+        isActive: nextActive,
+        updatedAt: new Date().toISOString(),
+        deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
+      });
+      const batch = writeBatch(db);
+      batch.set(getOrgDocRef('locations', location.id), payload, { merge: true });
+      batch.set(getLegacyDocRef('locations', location.id), payload, { merge: true });
+      await batch.commit();
       if (!nextActive && activeLocationId === location.id) {
         setActiveLocationId('all');
       }
@@ -308,17 +284,10 @@ export default function App() {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        const brandingRecord = {
+        await writePlatformRecord('settings', 'branding', {
           clientLogo: reader.result as string,
-          orgId: crmConfig.sharedOrgId,
-          sourceApp: PLATFORM_SETTINGS_SOURCE,
           updatedAt: new Date().toISOString(),
-        };
-
-        await Promise.all([
-          setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'settings', 'branding'), brandingRecord, { merge: true }),
-          setDoc(doc(db, 'settings', 'branding'), brandingRecord, { merge: true }),
-        ]);
+        }, { merge: true });
       } catch (error) {
         console.error(error);
         alert('Failed to update logo.');

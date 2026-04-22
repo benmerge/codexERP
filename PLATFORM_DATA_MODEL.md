@@ -83,6 +83,30 @@ Use for:
 - order fulfillment
 - reporting
 
+### `orgs/{orgId}/settings/{settingId}`
+
+Shared workspace settings that multiple tools can use.
+
+Suggested first records:
+
+- `branding`
+- `tool_preferences`
+- `notifications`
+
+Suggested fields for `branding`:
+
+- `clientLogo`
+- `orgId`
+- `sourceApp`
+- `updatedAt`
+
+Use for:
+
+- shared launcher chrome
+- CRM branding
+- ReMix branding
+- future tool-level workspace presentation
+
 ### `orgs/{orgId}/customers/{customerId}`
 
 Canonical customer or account record used by CRM and future tools.

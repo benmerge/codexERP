@@ -66,6 +66,16 @@ Target canonical collections are:
 - `orgs/{orgId}/submissions`
 - `orgs/{orgId}/events`
 
+Canonical records now live under the org model for:
+
+- `orgs/{orgId}`
+- `orgs/{orgId}/members`
+- `orgs/{orgId}/locations`
+- `orgs/{orgId}/settings`
+- `orgs/{orgId}/inventory`
+- `orgs/{orgId}/recipes`
+- `orgs/{orgId}/logs`
+
 ## Permission Model
 
 - Approved company users can use the apps
@@ -75,7 +85,7 @@ Target canonical collections are:
 
 ## Next Rebuild Steps
 
-1. Make `orgs`, `members`, and `locations` canonical
-2. Normalize `orders` as the first true cross-tool record
-3. Normalize `inventory` and `recipes` under the org-first model
-4. Add shared audit/event records for reporting and automation
+1. Make `orders` canonical under `orgs/{orgId}/orders`
+2. Migrate CRM records like `customers`, `products`, and `tasks` to the org-first model
+3. Introduce shared `events` records for auditability and automation
+4. Start the next platform-native tool surface on top of the shared org model
