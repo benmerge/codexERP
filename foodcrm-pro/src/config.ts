@@ -1,4 +1,4 @@
-import { DEFAULT_SHARED_ORG_ID } from '@platform/shared';
+import { DEFAULT_SHARED_ORG_ID } from './platform/shared';
 
 const normalizeOptional = (value?: string | null) => {
   const trimmed = value?.trim();

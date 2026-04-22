@@ -4,10 +4,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../data/AppContext';
 import { crmConfig } from '../config';
-import { buildDefaultTools, getToolTitle, mergeToolsWithRegistry, type PlatformTool, type ToolRegistryEntry } from '@platform/tools';
+import { buildDefaultTools, getToolTitle, mergeToolsWithRegistry, type PlatformTool, type ToolRegistryEntry } from '../platform/tools';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { canManagePlatform } from '@platform/shared';
+import { canManagePlatform } from '../platform/shared';
 
 const statusStyles: Record<'ready' | 'beta' | 'planned', string> = {
   ready: 'bg-emerald-100 text-emerald-700 ring-emerald-200',

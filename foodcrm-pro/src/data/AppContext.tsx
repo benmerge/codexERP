@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { crmAppConfig } from '../config';
 import mergeLogo from '../assets/merge-impact-logo.png';
 import { initialCustomers, initialOrders, initialProducts, initialSuppliers, initialTasks } from './mockData';
-import { canManageLocations, resolveOrgId } from '@platform/shared';
+import { canManageLocations, resolveOrgId } from '../platform/shared';
 
 interface AppState {
   user: User | null;
