@@ -1,6 +1,8 @@
 export interface LocationDef {
   id: string;
   name: string;
+  orgId?: string;
+  sourceApp?: string;
   createdAt?: string;
   isActive?: boolean;
   updatedAt?: string;

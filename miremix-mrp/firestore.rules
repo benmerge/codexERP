@@ -67,6 +67,19 @@ service cloud.firestore {
              (!('isActive' in data) || data.isActive is bool);
     }
 
+    function isValidCanonicalLocation(data, orgId, locationId) {
+      return data.id is string &&
+             data.id == locationId &&
+             data.name is string &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string) &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string) &&
+             (!('deactivatedAt' in data) || data.deactivatedAt is string) &&
+             (!('isActive' in data) || data.isActive is bool);
+    }
+
     // Orders (from CRM)
     match /orders/{id} {
       allow read: if is40CenturyGrain();
@@ -83,6 +96,12 @@ service cloud.firestore {
     match /locations/{id} {
       allow read: if is40CenturyGrain();
       allow create, update: if is40CenturyGrain() && isValidLocation(request.resource.data);
+    }
+
+    match /orgs/{orgId}/locations/{locationId} {
+      allow read: if is40CenturyGrain();
+      allow create, update: if is40CenturyGrain() &&
+                               isValidCanonicalLocation(request.resource.data, orgId, locationId);
     }
 
     // Default deny

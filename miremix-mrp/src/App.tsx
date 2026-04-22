@@ -10,6 +10,22 @@ import { type LocationDef } from './types';
 import { crmConfig } from './config';
 import { SHARED_WORKSPACE_DOMAINS, canManageLocations, isSharedWorkspaceUser } from '@platform/shared';
 
+const PLATFORM_LOCATION_SOURCE = 'miremix-mrp';
+
+const normalizeLocation = (locationId: string, data: Partial<LocationDef>): LocationDef => ({
+  id: locationId,
+  name: data.name ?? 'Unnamed Location',
+  orgId: data.orgId,
+  sourceApp: data.sourceApp,
+  createdAt: data.createdAt,
+  updatedAt: data.updatedAt,
+  deactivatedAt: data.deactivatedAt,
+  isActive: data.isActive ?? true,
+});
+
+const sortLocations = (items: LocationDef[]) =>
+  [...items].sort((left, right) => left.name.localeCompare(right.name));
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(null);
@@ -24,6 +40,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [clientLogo, setClientLogo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const hasHydratedCanonicalLocationsRef = useRef(false);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard },
@@ -52,50 +69,103 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const unsubscribe = onSnapshot(query(collection(db, 'locations')), (snap) => {
-      const locs = snap.docs
-        .map((d) => {
-          const data = d.data() as Partial<LocationDef>;
-          return {
-            id: d.id,
-            name: data.name ?? 'Unnamed Location',
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
-            deactivatedAt: data.deactivatedAt,
-            isActive: data.isActive ?? true,
-          } satisfies LocationDef;
-        })
-        .sort((left, right) => left.name.localeCompare(right.name));
-      if (locs.length === 0) {
-        const defaultLoc = {
+    const orgLocationsRef = collection(db, 'orgs', crmConfig.sharedOrgId, 'locations');
+
+    const writeLocationToPlatform = async (location: LocationDef) => {
+      const platformLocation = {
+        ...location,
+        orgId: crmConfig.sharedOrgId,
+        sourceApp: PLATFORM_LOCATION_SOURCE,
+      };
+
+      await Promise.all([
+        setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id), platformLocation, { merge: true }),
+        setDoc(doc(db, 'locations', location.id), platformLocation, { merge: true }),
+      ]);
+    };
+
+    const hydrateCanonicalLocations = async () => {
+      if (hasHydratedCanonicalLocationsRef.current) return;
+      hasHydratedCanonicalLocationsRef.current = true;
+
+      const legacySnapshot = await getDocs(query(collection(db, 'locations')));
+      const legacyLocations = sortLocations(
+        legacySnapshot.docs.map((entry) => normalizeLocation(entry.id, entry.data() as Partial<LocationDef>))
+      );
+
+      if (legacyLocations.length === 0) {
+        const defaultLoc: LocationDef = {
           id: 'default',
           name: 'Main Facility',
+          orgId: crmConfig.sharedOrgId,
+          sourceApp: PLATFORM_LOCATION_SOURCE,
           isActive: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         setLocations([defaultLoc]);
         setActiveLocationId('default');
-        void setDoc(doc(db, 'locations', 'default'), defaultLoc);
-      } else {
-        setLocations(locs);
-        const nextDefaultLocation = locs.find((location) => location.isActive !== false);
-        if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId && l.isActive !== false)) {
-          setActiveLocationId(canManageLocations(user?.email) ? 'all' : nextDefaultLocation?.id ?? 'all');
-        }
+        await writeLocationToPlatform(defaultLoc);
+        return;
+      }
+
+      const batch = writeBatch(db);
+      legacyLocations.forEach((location) => {
+        batch.set(
+          doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id),
+          {
+            ...location,
+            orgId: crmConfig.sharedOrgId,
+            sourceApp: location.sourceApp ?? PLATFORM_LOCATION_SOURCE,
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+    };
+
+    const unsubscribe = onSnapshot(query(orgLocationsRef), (snap) => {
+      const locs = sortLocations(
+        snap.docs.map((entry) => normalizeLocation(entry.id, entry.data() as Partial<LocationDef>))
+      );
+
+      if (locs.length === 0) {
+        void hydrateCanonicalLocations();
+        return;
+      }
+
+      setLocations(locs);
+      const nextDefaultLocation = locs.find((location) => location.isActive !== false);
+      if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId && l.isActive !== false)) {
+        setActiveLocationId(canManageLocations(user?.email) ? 'all' : nextDefaultLocation?.id ?? 'all');
       }
     });
     return () => unsubscribe();
   }, [user, activeLocationId]);
+
+  const writeLocationRecord = async (location: LocationDef) => {
+    const platformLocation = {
+      ...location,
+      orgId: crmConfig.sharedOrgId,
+      sourceApp: PLATFORM_LOCATION_SOURCE,
+    };
+
+    await Promise.all([
+      setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id), platformLocation, { merge: true }),
+      setDoc(doc(db, 'locations', location.id), platformLocation, { merge: true }),
+    ]);
+  };
 
   const handleCreateLocation = async () => {
     if (!newLocName.trim()) return;
     try {
       const locId = `loc_${Date.now().toString()}`;
 
-      await setDoc(doc(db, 'locations', locId), {
+      await writeLocationRecord({
         id: locId,
         name: newLocName.trim(),
+        orgId: crmConfig.sharedOrgId,
+        sourceApp: PLATFORM_LOCATION_SOURCE,
         isActive: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -145,7 +215,8 @@ export default function App() {
     if (!trimmed) return;
 
     try {
-      await updateDoc(doc(db, 'locations', locationId), {
+      await writeLocationRecord({
+        id: locationId,
         name: trimmed,
         updatedAt: new Date().toISOString(),
       });
@@ -161,11 +232,26 @@ export default function App() {
     const nextActive = location.isActive === false;
 
     try {
-      await updateDoc(doc(db, 'locations', location.id), {
-        isActive: nextActive,
-        updatedAt: new Date().toISOString(),
-        deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
-      });
+      await Promise.all([
+        setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'locations', location.id), {
+          id: location.id,
+          name: location.name,
+          orgId: crmConfig.sharedOrgId,
+          sourceApp: PLATFORM_LOCATION_SOURCE,
+          isActive: nextActive,
+          updatedAt: new Date().toISOString(),
+          deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
+        }, { merge: true }),
+        setDoc(doc(db, 'locations', location.id), {
+          id: location.id,
+          name: location.name,
+          orgId: crmConfig.sharedOrgId,
+          sourceApp: PLATFORM_LOCATION_SOURCE,
+          isActive: nextActive,
+          updatedAt: new Date().toISOString(),
+          deactivatedAt: nextActive ? deleteField() : new Date().toISOString(),
+        }, { merge: true }),
+      ]);
       if (!nextActive && activeLocationId === location.id) {
         setActiveLocationId('all');
       }
