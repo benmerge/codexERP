@@ -6,6 +6,7 @@ import { crmService, type CRMOrder } from '../services/crmService';
 import { type Ingredient, type Recipe } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { normalizeIngredient } from '../lib/inventoryCategories';
+import { subscribeToPlatformCollection } from '../lib/platformData';
 
 interface BatchLog {
   id: string;
@@ -38,8 +39,11 @@ export function Dashboard({ locationId }: { locationId: string }) {
     setStatus(null);
 
     // Inventory listener
-    const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
-      let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
+    const unsubInv = subscribeToPlatformCollection<Ingredient>({
+      collectionName: 'inventory',
+      mapDoc: (snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Ingredient),
+      onData: (nextItems) => {
+        let items = nextItems;
       items = items.map(normalizeIngredient);
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
@@ -58,21 +62,26 @@ export function Dashboard({ locationId }: { locationId: string }) {
       }
       setInventory(items);
       setInventoryReady(true);
-    }, (err) => {
-      console.error(err);
-      setInventory([]);
-      setInventoryReady(true);
-      setStatus({ type: 'error', msg: 'Inventory feed could not be loaded for this workspace.' });
-      try {
-        handleFirestoreError(err, OperationType.LIST, 'inventory');
-      } catch (loggedError) {
-        console.error(loggedError);
-      }
+      },
+      onError: (err) => {
+        console.error(err);
+        setInventory([]);
+        setInventoryReady(true);
+        setStatus({ type: 'error', msg: 'Inventory feed could not be loaded for this workspace.' });
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'inventory');
+        } catch (loggedError) {
+          console.error(loggedError);
+        }
+      },
     });
 
     // Recipes listener (for most used ingredient calculation)
-    const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
-      let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Recipe[];
+    const unsubRec = subscribeToPlatformCollection<Recipe>({
+      collectionName: 'recipes',
+      mapDoc: (snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Recipe),
+      onData: (nextItems) => {
+        let items = nextItems;
       items = items.filter((i) =>
         locationId === 'all'
           ? true
@@ -80,6 +89,12 @@ export function Dashboard({ locationId }: { locationId: string }) {
       );
       setRecipes(items);
       setRecipesReady(true);
+      },
+      onError: (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'recipes');
+        setRecipes([]);
+        setRecipesReady(true);
+      },
     });
 
     // Logs listener for usage metrics

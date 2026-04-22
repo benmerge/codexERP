@@ -2,10 +2,17 @@ import React, { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import Papa from 'papaparse';
 import { type Recipe, type Ingredient, type RecipeIngredient, type RecipeMeasureUnit } from '../types';
 import { Beaker, Plus, Save, Trash2, X, FolderOpen, Loader2, Upload, Pencil } from 'lucide-react';
-import { collection, onSnapshot, query, addDoc, deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { CATEGORY_ORDER, INGREDIENT_CATEGORIES, normalizeIngredient, normalizeInventoryCategory } from '../lib/inventoryCategories';
+import {
+  getLegacyCollectionRef,
+  getLegacyDocRef,
+  getOrgDocRef,
+  subscribeToPlatformCollection,
+  writePlatformRecord,
+} from '../lib/platformData';
 
 const MEASURE_UNITS: RecipeMeasureUnit[] = ['g', 'kg', 'ml'];
 const FORMULA_LINE_CATEGORIES: Array<Ingredient['category']> = INGREDIENT_CATEGORIES;
@@ -134,9 +141,11 @@ export function Recipes({ locationId }: { locationId: string }) {
   useEffect(() => {
     if (!locationId) return;
 
-    const qInv = query(collection(db, 'inventory'));
-    const unsubInv = onSnapshot(qInv, (snapshot) => {
-      let items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Ingredient[];
+    const unsubInv = subscribeToPlatformCollection<Ingredient>({
+      collectionName: 'inventory',
+      mapDoc: (snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Ingredient),
+      onData: (nextItems) => {
+        let items = nextItems;
       items = items.map(normalizeIngredient);
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
@@ -156,15 +165,19 @@ export function Recipes({ locationId }: { locationId: string }) {
         return a.name.localeCompare(b.name);
       });
       setInventory(items);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'inventory');
-      setInventory([]);
-      setLoading(false);
+      },
+      onError: (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'inventory');
+        setInventory([]);
+        setLoading(false);
+      },
     });
 
-    const qRec = query(collection(db, 'recipes'));
-    const unsubRec = onSnapshot(qRec, (snapshot) => {
-      let items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Recipe[];
+    const unsubRec = subscribeToPlatformCollection<Recipe>({
+      collectionName: 'recipes',
+      mapDoc: (snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Recipe),
+      onData: (nextItems) => {
+        let items = nextItems;
       items = items.filter((i) =>
         locationId === 'all'
           ? true
@@ -172,9 +185,11 @@ export function Recipes({ locationId }: { locationId: string }) {
       );
       setRecipes(items);
       setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'recipes');
-      setLoading(false);
+      },
+      onError: (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'recipes');
+        setLoading(false);
+      },
     });
 
     return () => {
@@ -329,7 +344,7 @@ export function Recipes({ locationId }: { locationId: string }) {
 
     if (!finishedGood && newFinishedGoodName.trim()) {
       const targetLocationId = recipeLocationId === 'all' ? 'default' : recipeLocationId;
-      const finishedGoodRef = doc(collection(db, 'inventory'));
+      const finishedGoodRef = doc(getLegacyCollectionRef('inventory'));
       finishedGood = {
         id: finishedGoodRef.id,
         name: newFinishedGoodName.trim(),
@@ -341,7 +356,7 @@ export function Recipes({ locationId }: { locationId: string }) {
       };
 
       try {
-        await setDoc(finishedGoodRef, finishedGood);
+        await writePlatformRecord('inventory', finishedGoodRef.id, finishedGood);
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, 'inventory');
         setStatus({ type: 'error', msg: 'Failed to create the finished good for this formula.' });
@@ -374,10 +389,11 @@ export function Recipes({ locationId }: { locationId: string }) {
     try {
       const payload = buildRecipePayload(finishedGood, normalizedIngredients, recipeLocationId);
       if (editingRecipeId) {
-        await updateDoc(doc(db, 'recipes', editingRecipeId), payload);
+        await writePlatformRecord('recipes', editingRecipeId, payload, { merge: true });
         setStatus({ type: 'success', msg: `Updated formula for ${finishedGood.name}.` });
       } else {
-        await addDoc(collection(db, 'recipes'), payload);
+        const recipeRef = doc(getLegacyCollectionRef('recipes'));
+        await writePlatformRecord('recipes', recipeRef.id, payload);
         setStatus({ type: 'success', msg: `Saved formula for ${finishedGood.name}.` });
       }
       resetDraft();
@@ -467,9 +483,12 @@ export function Recipes({ locationId }: { locationId: string }) {
                 continue;
               }
 
-              await addDoc(collection(db, 'recipes'), {
-                ...buildRecipePayload(finishedGood, recipeIngredients, locationId),
-              });
+              const recipeRef = doc(getLegacyCollectionRef('recipes'));
+              await writePlatformRecord(
+                'recipes',
+                recipeRef.id,
+                buildRecipePayload(finishedGood, recipeIngredients, locationId)
+              );
 
               importedNames.push(finishedGood.name);
             }
@@ -510,7 +529,12 @@ export function Recipes({ locationId }: { locationId: string }) {
             throw new Error(`Could not match these ingredients in inventory: ${unmatched.join(', ')}`);
           }
 
-          await addDoc(collection(db, 'recipes'), buildRecipePayload(finishedGood, recipeIngredients, locationId));
+          const recipeRef = doc(getLegacyCollectionRef('recipes'));
+          await writePlatformRecord(
+            'recipes',
+            recipeRef.id,
+            buildRecipePayload(finishedGood, recipeIngredients, locationId)
+          );
 
           setStatus({ type: 'success', msg: `Imported recipe for ${finishedGood.name} with ${recipeIngredients.length} ingredient lines.` });
         } catch (error) {
@@ -531,7 +555,10 @@ export function Recipes({ locationId }: { locationId: string }) {
   const handleDeleteRecipe = async (id: string | undefined) => {
     if (!id || !window.confirm('Are you sure you want to delete this formula?')) return;
     try {
-      await deleteDoc(doc(db, 'recipes', id));
+      const batch = writeBatch(db);
+      batch.delete(getOrgDocRef('recipes', id));
+      batch.delete(getLegacyDocRef('recipes', id));
+      await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `recipes/${id}`);
     }

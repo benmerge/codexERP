@@ -6,6 +6,7 @@ import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { normalizeIngredient } from '../lib/inventoryCategories';
 import { crmService, type CRMOrder } from '../services/crmService';
+import { subscribeToPlatformCollection } from '../lib/platformData';
 
 const convertMeasurement = (amount: number, fromUnit: string, toUnit: string) => {
   const from = fromUnit.toLowerCase();
@@ -39,8 +40,11 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
   useEffect(() => {
     if (!locationId) return;
 
-    const unsubInv = onSnapshot(query(collection(db, 'inventory')), (snapshot) => {
-      let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Ingredient[];
+    const unsubInv = subscribeToPlatformCollection<Ingredient>({
+      collectionName: 'inventory',
+      mapDoc: (snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Ingredient),
+      onData: (nextItems) => {
+        let items = nextItems;
       items = items.map(normalizeIngredient);
       if (locationId === 'all') {
         const grouped = new Map<string, Ingredient>();
@@ -58,14 +62,19 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
         items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
       }
       setInventory(items);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'inventory');
-      setInventory([]);
-      setLoading(false);
+      },
+      onError: (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'inventory');
+        setInventory([]);
+        setLoading(false);
+      },
     });
 
-    const unsubRec = onSnapshot(query(collection(db, 'recipes')), (snapshot) => {
-      let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Recipe[];
+    const unsubRec = subscribeToPlatformCollection<Recipe>({
+      collectionName: 'recipes',
+      mapDoc: (snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Recipe),
+      onData: (nextItems) => {
+        let items = nextItems;
       items = items.filter((i) =>
         locationId === 'all'
           ? true
@@ -73,9 +82,11 @@ export function BatchMixBuilder({ locationId }: { locationId: string }) {
       );
       setRecipes(items);
       setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'recipes');
-      setLoading(false);
+      },
+      onError: (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'recipes');
+        setLoading(false);
+      },
     });
 
     return () => { unsubInv(); unsubRec(); };

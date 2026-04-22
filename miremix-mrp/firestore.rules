@@ -89,6 +89,33 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt is string);
     }
 
+    function isValidCanonicalInventory(data, orgId, inventoryId) {
+      return data.id is string &&
+             data.id == inventoryId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.name is string &&
+             (data.quantityOnHand is number || data.quantityOnHand is float) &&
+             (!('unit' in data) || data.unit is string) &&
+             (!('category' in data) || data.category is string) &&
+             (!('locationId' in data) || data.locationId is string) &&
+             (!('sourceApp' in data) || data.sourceApp is string) &&
+             (!('lastUpdated' in data) || data.lastUpdated is string);
+    }
+
+    function isValidCanonicalRecipe(data, orgId, recipeId) {
+      return data.id is string &&
+             data.id == recipeId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.name is string &&
+             data.ingredients is list &&
+             (!('finishedGoodId' in data) || data.finishedGoodId is string) &&
+             (!('finishedGoodName' in data) || data.finishedGoodName is string) &&
+             (!('locationId' in data) || data.locationId is string) &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
     // Orders (from CRM)
     match /orders/{id} {
       allow read: if is40CenturyGrain();
@@ -134,11 +161,25 @@ service cloud.firestore {
       allow delete: if is40CenturyGrain();
     }
 
+    match /orgs/{orgId}/inventory/{inventoryId} {
+      allow read: if is40CenturyGrain();
+      allow create, update: if is40CenturyGrain() &&
+                               isValidCanonicalInventory(request.resource.data, orgId, inventoryId);
+      allow delete: if is40CenturyGrain();
+    }
+
     // Recipes
     match /recipes/{id} {
       allow read: if is40CenturyGrain();
       allow create: if is40CenturyGrain() && isValidRecipe(request.resource.data);
       allow update: if is40CenturyGrain() && isValidRecipe(request.resource.data);
+      allow delete: if is40CenturyGrain();
+    }
+
+    match /orgs/{orgId}/recipes/{recipeId} {
+      allow read: if is40CenturyGrain();
+      allow create, update: if is40CenturyGrain() &&
+                               isValidCanonicalRecipe(request.resource.data, orgId, recipeId);
       allow delete: if is40CenturyGrain();
     }
 

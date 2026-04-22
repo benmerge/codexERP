@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import { Upload, Box, Loader2, Trash2 } from 'lucide-react';
-import { collection, onSnapshot, query, setDoc, doc, writeBatch, deleteDoc, getDocs, updateDoc } from 'firebase/firestore';
+import { doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Ingredient } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { INVENTORY_CATEGORIES, normalizeInventoryCategory, normalizeIngredient } from '../lib/inventoryCategories';
 import { v4 as uuidv4 } from 'uuid';
 import { Edit2, Check, X } from 'lucide-react';
+import {
+  getLegacyCollectionRef,
+  getLegacyDocRef,
+  getOrgDocRef,
+  subscribeToPlatformCollection,
+  withPlatformMetadata,
+  writePlatformRecord,
+} from '../lib/platformData';
 
 export function Inventory({ locationId }: { locationId: string }) {
   const [inventory, setInventory] = useState<Ingredient[]>([]);
@@ -18,45 +26,47 @@ export function Inventory({ locationId }: { locationId: string }) {
 
   useEffect(() => {
     if (!locationId) return;
-    const q = query(collection(db, 'inventory'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      let items = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Ingredient[];
+    const unsubscribe = subscribeToPlatformCollection<Ingredient>({
+      collectionName: 'inventory',
+      mapDoc: (snapshot) => ({
+        id: snapshot.id,
+        ...snapshot.data(),
+      } as Ingredient),
+      onData: (nextItems) => {
+        let items = nextItems.map(normalizeIngredient);
 
-      items = items.map(normalizeIngredient);
+        if (locationId === 'all') {
+          const grouped = new Map<string, Ingredient>();
+          items.forEach((item) => {
+            const key = `${item.name}__${item.category}__${item.unit}`;
+            const existing = grouped.get(key);
+            if (existing) {
+              existing.quantityOnHand += item.quantityOnHand || 0;
+              const existingUpdated = existing.lastUpdated ? new Date(existing.lastUpdated).getTime() : 0;
+              const itemUpdated = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
+              if (itemUpdated > existingUpdated) existing.lastUpdated = item.lastUpdated;
+            } else {
+              grouped.set(key, {
+                ...item,
+                id: key,
+                locationId: 'all',
+                quantityOnHand: item.quantityOnHand || 0,
+              });
+            }
+          });
+          items = Array.from(grouped.values());
+        } else {
+          items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
+        }
 
-      if (locationId === 'all') {
-        const grouped = new Map<string, Ingredient>();
-        items.forEach((item) => {
-          const key = `${item.name}__${item.category}__${item.unit}`;
-          const existing = grouped.get(key);
-          if (existing) {
-            existing.quantityOnHand += item.quantityOnHand || 0;
-            const existingUpdated = existing.lastUpdated ? new Date(existing.lastUpdated).getTime() : 0;
-            const itemUpdated = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
-            if (itemUpdated > existingUpdated) existing.lastUpdated = item.lastUpdated;
-          } else {
-            grouped.set(key, {
-              ...item,
-              id: key,
-              locationId: 'all',
-              quantityOnHand: item.quantityOnHand || 0,
-            });
-          }
-        });
-        items = Array.from(grouped.values());
-      } else {
-        items = items.filter(i => i.locationId === locationId || (!i.locationId && locationId === 'default'));
-      }
-
-      items.sort((a, b) => a.name.localeCompare(b.name));
-      setInventory(items);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'inventory');
-      setLoading(false);
+        items.sort((a, b) => a.name.localeCompare(b.name));
+        setInventory(items);
+        setLoading(false);
+      },
+      onError: (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'inventory');
+        setLoading(false);
+      },
     });
     return () => unsubscribe();
   }, [locationId]);
@@ -85,10 +95,10 @@ export function Inventory({ locationId }: { locationId: string }) {
     
     setIsUploading(true);
     try {
-      await updateDoc(doc(db, 'inventory', ingredientId), {
+      await writePlatformRecord('inventory', ingredientId, {
         quantityOnHand: val,
         lastUpdated: new Date().toISOString()
-      });
+      }, { merge: true });
       setEditingId(null);
       setStatus({ type: 'success', msg: 'Stock reconciled successfully.' });
     } catch (err) {
@@ -104,13 +114,12 @@ export function Inventory({ locationId }: { locationId: string }) {
     setStatus(null);
     setShowConfirmReset(false);
     try {
-      const q = query(collection(db, 'inventory'));
-      const snapshot = await getDocs(q);
       const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => {
-        const data = d.data();
+      inventory.forEach((item) => {
+        const data = normalizeIngredient(item);
         if (data.locationId === locationId || (!data.locationId && locationId === 'default')) {
-          batch.delete(d.ref);
+          batch.delete(getOrgDocRef('inventory', data.id));
+          batch.delete(getLegacyDocRef('inventory', data.id));
         }
       });
       await batch.commit();
@@ -195,9 +204,7 @@ export function Inventory({ locationId }: { locationId: string }) {
           const finalQty = isNaN(qty) ? 0 : qty;
 
           const scopedId = `${locationId}__${String(rawId).trim()}`;
-          const docRef = doc(db, 'inventory', scopedId);
-          
-          batch.set(docRef, {
+          const payload = withPlatformMetadata({
             id: scopedId,
             name,
             unit: unitLabel,
@@ -205,7 +212,9 @@ export function Inventory({ locationId }: { locationId: string }) {
             quantityOnHand: finalQty,
             locationId,
             lastUpdated: new Date().toISOString()
-          }, { merge: true });
+          });
+          batch.set(getOrgDocRef('inventory', scopedId), payload, { merge: true });
+          batch.set(getLegacyDocRef('inventory', scopedId), payload, { merge: true });
           count++;
         });
 
@@ -241,9 +250,8 @@ export function Inventory({ locationId }: { locationId: string }) {
     setIsUploading(true);
     setStatus(null);
     try {
-      const docRef = doc(collection(db, 'inventory'));
-      await setDoc(docRef, {
-        id: docRef.id,
+      const docRef = doc(getLegacyCollectionRef('inventory'));
+      await writePlatformRecord('inventory', docRef.id, {
         name: newItem.name.trim(),
         category: normalizeInventoryCategory(newItem.category, newItem.name.trim()),
         unit: newItem.unit,
@@ -268,7 +276,10 @@ export function Inventory({ locationId }: { locationId: string }) {
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     setIsUploading(true);
     try {
-      await deleteDoc(doc(db, 'inventory', id));
+      const batch = writeBatch(db);
+      batch.delete(getOrgDocRef('inventory', id));
+      batch.delete(getLegacyDocRef('inventory', id));
+      await batch.commit();
       setStatus({ type: 'success', msg: 'Item deleted.' });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {

@@ -11,6 +11,8 @@ export interface LocationDef {
 
 export interface Ingredient {
   id: string;
+  orgId?: string;
+  sourceApp?: string;
   locationId?: string;
   name: string;
   unit: string; // kg, g, units
@@ -30,6 +32,8 @@ export interface RecipeIngredient {
 
 export interface Recipe {
   id: string;
+  orgId?: string;
+  sourceApp?: string;
   locationId?: string;
   name: string;
   finishedGoodId?: string;
