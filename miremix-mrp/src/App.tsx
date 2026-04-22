@@ -5,7 +5,7 @@ import { Inventory } from './components/Inventory';
 import { Recipes } from './components/Recipes';
 import { BatchMixBuilder } from './components/BatchCalculator';
 import { auth, login, logout, onAuthStateChanged, type User, db } from './firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch, updateDoc, deleteField } from 'firebase/firestore';
+import { collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch, deleteField } from 'firebase/firestore';
 import { type LocationDef } from './types';
 import { crmConfig } from './config';
 import { SHARED_WORKSPACE_DOMAINS, canManageLocations, isSharedWorkspaceUser } from '@platform/shared';
@@ -26,6 +26,8 @@ const normalizeLocation = (locationId: string, data: Partial<LocationDef>): Loca
 const sortLocations = (items: LocationDef[]) =>
   [...items].sort((left, right) => left.name.localeCompare(right.name));
 
+const PLATFORM_SETTINGS_SOURCE = 'miremix-mrp';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(null);
@@ -41,6 +43,7 @@ export default function App() {
   const [clientLogo, setClientLogo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasHydratedCanonicalLocationsRef = useRef(false);
+  const hasHydratedCanonicalBrandingRef = useRef(false);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard },
@@ -57,11 +60,42 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, 'settings', 'branding'), (snapshot) => {
+    const orgBrandingRef = doc(db, 'orgs', crmConfig.sharedOrgId, 'settings', 'branding');
+
+    const writeBrandingRecord = async (clientLogoValue: string) => {
+      const brandingRecord = {
+        clientLogo: clientLogoValue,
+        orgId: crmConfig.sharedOrgId,
+        sourceApp: PLATFORM_SETTINGS_SOURCE,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await Promise.all([
+        setDoc(orgBrandingRef, brandingRecord, { merge: true }),
+        setDoc(doc(db, 'settings', 'branding'), brandingRecord, { merge: true }),
+      ]);
+    };
+
+    const hydrateCanonicalBranding = async () => {
+      if (hasHydratedCanonicalBrandingRef.current) return;
+      hasHydratedCanonicalBrandingRef.current = true;
+
+      const legacySnapshot = await getDocs(query(collection(db, 'settings')));
+      const brandingDoc = legacySnapshot.docs.find((entry) => entry.id === 'branding');
+      const legacyLogo = brandingDoc?.data().clientLogo;
+
+      if (typeof legacyLogo === 'string' && legacyLogo.length > 0) {
+        await writeBrandingRecord(legacyLogo);
+      } else {
+        setClientLogo(null);
+      }
+    };
+
+    const unsubscribe = onSnapshot(orgBrandingRef, (snapshot) => {
       if (snapshot.exists()) {
         setClientLogo((snapshot.data().clientLogo as string | undefined) || null);
       } else {
-        setClientLogo(null);
+        void hydrateCanonicalBranding();
       }
     });
     return () => unsubscribe();
@@ -274,10 +308,17 @@ export default function App() {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        await setDoc(doc(db, 'settings', 'branding'), {
+        const brandingRecord = {
           clientLogo: reader.result as string,
+          orgId: crmConfig.sharedOrgId,
+          sourceApp: PLATFORM_SETTINGS_SOURCE,
           updatedAt: new Date().toISOString(),
-        }, { merge: true });
+        };
+
+        await Promise.all([
+          setDoc(doc(db, 'orgs', crmConfig.sharedOrgId, 'settings', 'branding'), brandingRecord, { merge: true }),
+          setDoc(doc(db, 'settings', 'branding'), brandingRecord, { merge: true }),
+        ]);
       } catch (error) {
         console.error(error);
         alert('Failed to update logo.');

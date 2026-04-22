@@ -80,6 +80,15 @@ service cloud.firestore {
              (!('isActive' in data) || data.isActive is bool);
     }
 
+    function isValidCanonicalBranding(data, orgId) {
+      return data.clientLogo is string &&
+             data.clientLogo.size() < 1000000 &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
     // Orders (from CRM)
     match /orders/{id} {
       allow read: if is40CenturyGrain();
@@ -90,6 +99,13 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if true;
       allow create, update: if is40CenturyGrain();
+    }
+
+    match /orgs/{orgId}/settings/{settingId} {
+      allow read: if true;
+      allow create, update: if is40CenturyGrain() &&
+                               settingId == 'branding' &&
+                               isValidCanonicalBranding(request.resource.data, orgId);
     }
 
     // Locations
