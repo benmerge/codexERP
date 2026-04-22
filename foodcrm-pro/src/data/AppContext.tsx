@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { crmAppConfig } from '../config';
 import mergeLogo from '../assets/merge-impact-logo.png';
 import { initialCustomers, initialOrders, initialProducts, initialSuppliers, initialTasks } from './mockData';
-import { canManageLocations, resolveOrgId } from '../platform/shared';
+import { canManageLocations, canManagePlatform, getEmailDomain, resolveOrgId } from '../platform/shared';
 
 interface AppState {
   user: User | null;
@@ -84,6 +84,49 @@ const normalizeSalesRep = (member: OrgMember, fallbackUser?: User | null): OrgMe
   };
 };
 
+const getBootstrapRole = (email?: string | null) => {
+  if (canManageLocations(email) || canManagePlatform(email)) {
+    return 'admin';
+  }
+
+  return 'user';
+};
+
+const buildOrgBootstrapRecord = (currentUser: User, orgId: string) => {
+  const primaryDomain = getEmailDomain(currentUser.email);
+  const fallbackName = primaryDomain
+    ? humanizeRepLabel(primaryDomain.split('.')[0] ?? primaryDomain)
+    : humanizeRepLabel(orgId.replace(/^org_/, ''));
+
+  return removeUndefined({
+    id: orgId,
+    name: fallbackName || currentUser.displayName || currentUser.email || 'Shared Workspace',
+    slug: orgId.replace(/^org_/, ''),
+    status: 'active',
+    primaryDomain,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: currentUser.uid,
+  });
+};
+
+const buildOrgMemberBootstrapRecord = (currentUser: User, orgId: string) =>
+  removeUndefined({
+    userId: currentUser.uid,
+    email: currentUser.email || '',
+    displayName: currentUser.displayName || currentUser.email || 'Workspace Member',
+    orgId,
+    role: getBootstrapRole(currentUser.email),
+    isActive: true,
+    sourceApp: 'foodcrm-pro',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+function removeUndefined(obj: any) {
+  return Object.fromEntries(Object.entries(obj).filter(([_, v]) => v !== undefined));
+}
+
 export const normalizeRepData = <T extends { salesRepId?: string, salesRepName?: string, salesRepEmail?: string }>(record: T): T => {
   let { salesRepId, salesRepName, salesRepEmail } = record;
   const looksLikeUid = (value?: string) =>
@@ -153,21 +196,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const dataId = getDataId(currentUser);
         void (async () => {
           try {
+            const bootstrapRole = getBootstrapRole(currentUser.email);
+
             await setDoc(doc(db, 'users', currentUser.uid), {
               email: currentUser.email,
               displayName: currentUser.displayName || currentUser.email,
-              role: canManageLocations(currentUser.email) ? 'admin' : 'user',
+              role: bootstrapRole,
               orgId: dataId
             }, { merge: true });
 
             await setDoc(doc(db, `users/${dataId}/team`, currentUser.uid), {
               email: currentUser.email,
               displayName: currentUser.displayName || currentUser.email,
-              role: canManageLocations(currentUser.email) ? 'admin' : 'user',
+              role: bootstrapRole,
               orgId: dataId,
             }, { merge: true });
+
+            await setDoc(
+              doc(db, 'orgs', dataId),
+              buildOrgBootstrapRecord(currentUser, dataId),
+              { merge: true }
+            );
+
+            await setDoc(
+              doc(db, `orgs/${dataId}/members`, currentUser.uid),
+              buildOrgMemberBootstrapRecord(currentUser, dataId),
+              { merge: true }
+            );
           } catch (err) {
-            console.error("Error bootstrapping user/team membership:", err);
+            console.error("Error bootstrapping user/team/org membership:", err);
           }
         })();
       }
@@ -398,10 +455,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error("Signup failed:", error);
       setAuthError(error.message || "Signup failed. Make sure your password is at least 6 characters.");
     }
-  };
-
-  const removeUndefined = (obj: any) => {
-    return Object.fromEntries(Object.entries(obj).filter(([_, v]) => v !== undefined));
   };
 
   const decorateOrderForStorage = (order: Order, dataId: string) => {
@@ -682,6 +735,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
       seedBatch.set(doc(db, 'users', dataId), { orgId: dataId }, { merge: true });
+
+      if (user) {
+        seedBatch.set(
+          doc(db, 'orgs', dataId),
+          buildOrgBootstrapRecord(user, dataId),
+          { merge: true }
+        );
+
+        seedBatch.set(
+          doc(db, `orgs/${dataId}/members`, user.uid),
+          buildOrgMemberBootstrapRecord(user, dataId),
+          { merge: true }
+        );
+      }
 
       await seedBatch.commit();
     } catch (err) {

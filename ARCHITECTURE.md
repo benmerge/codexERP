@@ -36,7 +36,9 @@ It defines:
 
 ## Data Model
 
-The preferred shared collections are:
+The platform is moving toward a canonical org-first model documented in [PLATFORM_DATA_MODEL.md](./PLATFORM_DATA_MODEL.md).
+
+Current transitional collections still include:
 
 - `users/{uid}`
 - `users/{orgId}/team`
@@ -50,6 +52,20 @@ The preferred shared collections are:
 - `recipes`
 - `logs`
 
+Target canonical collections are:
+
+- `orgs/{orgId}`
+- `orgs/{orgId}/members`
+- `orgs/{orgId}/locations`
+- `orgs/{orgId}/customers`
+- `orgs/{orgId}/orders`
+- `orgs/{orgId}/products`
+- `orgs/{orgId}/inventory`
+- `orgs/{orgId}/recipes`
+- `orgs/{orgId}/tasks`
+- `orgs/{orgId}/submissions`
+- `orgs/{orgId}/events`
+
 ## Permission Model
 
 - Approved company users can use the apps
@@ -59,7 +75,7 @@ The preferred shared collections are:
 
 ## Next Rebuild Steps
 
-1. Move all email and role checks to shared helpers
-2. Standardize location and org behavior across both apps
-3. Introduce a single platform navigation/data shell for future tools
-4. Keep Firestore as the system of record unless a new service is clearly needed
+1. Make `orgs`, `members`, and `locations` canonical
+2. Normalize `orders` as the first true cross-tool record
+3. Normalize `inventory` and `recipes` under the org-first model
+4. Add shared audit/event records for reporting and automation

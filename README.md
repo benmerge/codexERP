@@ -12,6 +12,7 @@ Shared operations platform for 40 Century Grain.
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
 - [SECRETS_TEMPLATE.md](./SECRETS_TEMPLATE.md)
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [PLATFORM_DATA_MODEL.md](./PLATFORM_DATA_MODEL.md)
 
 ## CI/CD
 

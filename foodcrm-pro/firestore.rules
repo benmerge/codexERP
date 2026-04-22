@@ -69,6 +69,26 @@ service cloud.firestore {
               request.auth.token.email.lower() == "jon@mergeimpact.com");
     }
 
+    function requesterOrgId() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgId
+        : null;
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+             (requesterOrgId() == orgId ||
+              exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)));
+    }
+
+    function isOrgAdmin(orgId) {
+      return isPlatformAdmin() ||
+             (isAuthenticated() &&
+              exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)).data.role == 'admin');
+    }
+
     function uidUnchanged(userId) {
       return !('uid' in request.resource.data) || request.resource.data.uid == userId;
     }
@@ -191,6 +211,39 @@ service cloud.firestore {
              (!('role' in data) || data.role in ['admin', 'user']);
     }
 
+    function isValidOrg(data, orgId) {
+      return data.keys().hasOnly(['id', 'name', 'slug', 'status', 'primaryDomain', 'createdAt', 'updatedAt', 'updatedBy']) &&
+             data.id is string &&
+             data.id == orgId &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() < 200 &&
+             data.slug is string &&
+             data.slug.size() > 0 &&
+             data.slug.size() < 200 &&
+             data.status in ['active', 'inactive', 'draft'] &&
+             (!('primaryDomain' in data) || data.primaryDomain == null || (data.primaryDomain is string && data.primaryDomain.size() < 200)) &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string) &&
+             (!('updatedBy' in data) || data.updatedBy is string);
+    }
+
+    function isValidOrgMember(data, orgId, memberId) {
+      return data.keys().hasOnly(['userId', 'email', 'displayName', 'orgId', 'role', 'isActive', 'sourceApp', 'createdAt', 'updatedAt']) &&
+             data.userId is string &&
+             data.userId == memberId &&
+             data.email is string &&
+             isValidEmail(data.email) &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.role in ['admin', 'user'] &&
+             data.isActive is bool &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('sourceApp' in data) || data.sourceApp is string) &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -206,6 +259,25 @@ service cloud.firestore {
     match /platform_tools/{toolId} {
       allow read: if isSharedOpsUser();
       allow create, update, delete: if isPlatformAdmin();
+    }
+
+    match /orgs/{orgId} {
+      allow read: if isOrgMember(orgId) || isPlatformAdmin();
+      allow create: if isAuthenticated() &&
+                       isValidOrg(request.resource.data, orgId) &&
+                       (requesterOrgId() == orgId || isPlatformAdmin());
+      allow update: if isAuthenticated() &&
+                       isValidOrg(request.resource.data, orgId) &&
+                       (isOrgAdmin(orgId) || requesterOrgId() == orgId);
+      allow delete: if isPlatformAdmin();
+
+      match /members/{memberId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidOrgMember(request.resource.data, orgId, memberId) &&
+                                 (isOrgAdmin(orgId) || requesterOrgId() == orgId || request.auth.uid == memberId);
+        allow delete: if isOrgAdmin(orgId) || isPlatformAdmin();
+      }
     }
 
     match /users/{userId} {
