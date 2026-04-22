@@ -4,9 +4,11 @@
  */
 
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Routes, Route } from 'react-router-dom';
 import { AppProvider } from './data/AppContext';
 import { Layout } from './components/layout/Layout';
+import { PlatformHome } from './pages/PlatformHome';
+import { ManageTools } from './pages/ManageTools';
 import { Dashboard } from './pages/Dashboard';
 import { Customers } from './pages/Customers';
 import { Prospects } from './pages/Prospects';
@@ -20,7 +22,9 @@ export default function App() {
     <AppProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<Layout />}>
+          <Route path="/" element={<PlatformHome />} />
+          <Route path="/tools/manage" element={<ManageTools />} />
+          <Route path="crm" element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="customers" element={<Customers />} />
             <Route path="prospects" element={<Prospects />} />
@@ -29,6 +33,7 @@ export default function App() {
             <Route path="products" element={<Products />} />
             <Route path="suppliers" element={<Suppliers />} />
           </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     </AppProvider>

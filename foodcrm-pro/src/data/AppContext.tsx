@@ -6,9 +6,10 @@ import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User,
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import mergeLogo from '../assets/merge-impact-logo.png';
 import { crmAppConfig } from '../config';
+import mergeLogo from '../assets/merge-impact-logo.png';
 import { initialCustomers, initialOrders, initialProducts, initialSuppliers, initialTasks } from './mockData';
+import { canManageLocations, resolveOrgId } from '@platform/shared';
 
 interface AppState {
   user: User | null;
@@ -59,35 +60,6 @@ interface FirestoreErrorInfo {
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
-
-const SHARED_CRM_DOMAINS = ['40centurygrain.com', '40centurygrain.earth', 'mergeimpact.com'];
-
-const sanitizeSegment = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-const getEmailDomain = (email?: string | null) => {
-  if (!email || !email.includes('@')) return null;
-  return email.split('@')[1]?.toLowerCase() ?? null;
-};
-
-const resolveOrgId = (currentUser: User | null) => {
-  if (!currentUser?.uid) return null;
-
-  const domain = getEmailDomain(currentUser.email);
-  if (domain && SHARED_CRM_DOMAINS.includes(domain)) {
-    return crmAppConfig.sharedOrgId;
-  }
-
-  if (domain) {
-    return `org_${sanitizeSegment(domain)}`;
-  }
-
-  return `org_${sanitizeSegment(currentUser.uid)}`;
-};
 
 const humanizeRepLabel = (value: string) =>
   value
@@ -184,14 +156,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             await setDoc(doc(db, 'users', currentUser.uid), {
               email: currentUser.email,
               displayName: currentUser.displayName || currentUser.email,
-              role: currentUser.email?.toLowerCase() === 'ben@mergeimpact.com' ? 'admin' : 'user',
+              role: canManageLocations(currentUser.email) ? 'admin' : 'user',
               orgId: dataId
             }, { merge: true });
 
             await setDoc(doc(db, `users/${dataId}/team`, currentUser.uid), {
               email: currentUser.email,
               displayName: currentUser.displayName || currentUser.email,
-              role: currentUser.email?.toLowerCase() === 'ben@mergeimpact.com' ? 'admin' : 'user',
+              role: canManageLocations(currentUser.email) ? 'admin' : 'user',
               orgId: dataId,
             }, { merge: true });
           } catch (err) {
@@ -374,7 +346,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [user, isAuthReady]);
 
-  const getDataId = (currentUser: User | null) => resolveOrgId(currentUser);
+  const getDataId = (currentUser: User | null) => resolveOrgId(currentUser, crmAppConfig.sharedOrgId);
 
   const updateClientLogo = async (logoBase64: string) => {
     const dataId = getDataId(user);

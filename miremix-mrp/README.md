@@ -22,7 +22,7 @@ Production planning and fulfillment app for the shared 40 Century Grain workflow
 - `VITE_CRM_FIRESTORE_DATABASE_ID`: Firestore database id for the CRM app
 - `VITE_CRM_SHARED_ORG_ID`: Shared Firestore org id used by both apps
 - `VITE_CRM_ORDERS_COLLECTION`: CRM orders subcollection name, usually `orders`
-- `VITE_CRM_APP_URL`: CRM app URL used for the back-link
+- `VITE_CRM_APP_URL`: Platform home URL used for the back-link
 
 ## Production
 

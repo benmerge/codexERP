@@ -8,6 +8,7 @@ import { auth, login, logout, onAuthStateChanged, type User, db } from './fireba
 import { collection, onSnapshot, query, setDoc, doc, getDocs, writeBatch, updateDoc, deleteField } from 'firebase/firestore';
 import { type LocationDef } from './types';
 import { crmConfig } from './config';
+import { SHARED_WORKSPACE_DOMAINS, canManageLocations, isSharedWorkspaceUser } from '@platform/shared';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -23,7 +24,6 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [clientLogo, setClientLogo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const BEN_LOCATION_EMAILS = ['ben@mergeimpact.com', 'ben@40centurygrain.com'];
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard },
@@ -79,8 +79,9 @@ export default function App() {
         void setDoc(doc(db, 'locations', 'default'), defaultLoc);
       } else {
         setLocations(locs);
+        const nextDefaultLocation = locs.find((location) => location.isActive !== false);
         if (activeLocationId !== 'all' && !locs.find((l) => l.id === activeLocationId && l.isActive !== false)) {
-          setActiveLocationId('all');
+          setActiveLocationId(canManageLocations(user?.email) ? 'all' : nextDefaultLocation?.id ?? 'all');
         }
       }
     });
@@ -201,22 +202,24 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const allowedDomains = ['@40centurygrain.com', '@40centurygrain.earth', '@mergeimpact.com'];
-  const isAllowedDomain = user?.email
-    ? allowedDomains.some((domain) => user.email!.toLowerCase().endsWith(domain))
-    : false;
-  const canViewMultipleLocations = user?.email
-    ? BEN_LOCATION_EMAILS.includes(user.email.toLowerCase())
-    : false;
-  const allowedDomainLabel = allowedDomains.join(', ');
+  const isAllowedDomain = isSharedWorkspaceUser(user?.email);
+  const canViewMultipleLocations = canManageLocations(user?.email);
+  const allowedDomainLabel = SHARED_WORKSPACE_DOMAINS.map((domain) => `@${domain}`).join(', ');
   const activeNav = navItems.find((item) => item.id === activeTab) ?? navItems[0];
   const activeLocations = locations.filter((location) => location.isActive !== false);
   const inactiveLocations = locations.filter((location) => location.isActive === false);
+  const firstActiveLocationId = activeLocations[0]?.id;
   const locationOptions: LocationDef[] = [{ id: 'all', name: 'Total Inventory' }, ...activeLocations];
   const activeLocation =
     locationOptions.find((loc) => loc.id === activeLocationId) ??
     locationOptions.find((loc) => loc.id === 'all') ??
     locationOptions[0];
+
+  useEffect(() => {
+    if (!canViewMultipleLocations && activeLocationId === 'all' && firstActiveLocationId) {
+      setActiveLocationId(firstActiveLocationId);
+    }
+  }, [canViewMultipleLocations, activeLocationId, firstActiveLocationId]);
 
   if (!authReady) {
     return (
@@ -532,7 +535,7 @@ export default function App() {
               rel="noreferrer"
               className="px-4 py-3 text-[13px] font-medium text-zinc-400 hover:text-white hover:bg-white/6 rounded-2xl transition-all flex items-center justify-between group"
             >
-              Back to CRM
+              Platform Home
               <ExternalLink className="h-4 w-4 opacity-50" />
             </a>
           </ul>

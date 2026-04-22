@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle, Building2, X } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle, Building2, X, Grid2x2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../../data/AppContext';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -69,13 +69,14 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
   const [isResetting, setIsResetting] = React.useState(false);
   
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-    { icon: Users, label: 'Customers', path: '/customers' },
-    { icon: UserPlus, label: 'Prospects', path: '/prospects' },
-    { icon: KanbanSquare, label: 'Kanban Board', path: '/kanban' },
-    { icon: ShoppingCart, label: 'Sales & Orders', path: '/sales' },
-    { icon: Package, label: 'Product Catalog', path: '/products' },
-    { icon: Truck, label: 'Suppliers', path: '/suppliers' },
+    { icon: Grid2x2, label: 'Apps', path: '/' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/crm' },
+    { icon: Users, label: 'Customers', path: '/crm/customers' },
+    { icon: UserPlus, label: 'Prospects', path: '/crm/prospects' },
+    { icon: KanbanSquare, label: 'Kanban Board', path: '/crm/kanban' },
+    { icon: ShoppingCart, label: 'Sales & Orders', path: '/crm/sales' },
+    { icon: Package, label: 'Product Catalog', path: '/crm/products' },
+    { icon: Truck, label: 'Suppliers', path: '/crm/suppliers' },
   ];
   const getInitials = (name: string | null | undefined) => {
     if (!name) return 'U';

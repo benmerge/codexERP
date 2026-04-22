@@ -2,7 +2,7 @@
 
 This repo contains two production apps with different deployment targets:
 
-- `foodcrm-pro`: React frontend + Express backend, deployed to Cloud Run
+- `foodcrm-pro`: platform home + CRM frontend + Express backend, deployed to Cloud Run
 - `miremix-mrp`: React SPA deployed to Firebase Hosting
 
 ## 1. Shared Prerequisites
@@ -31,6 +31,7 @@ Recommended target: Cloud Run
 ### Required env vars
 
 Set the values from [foodcrm-pro/.env.example](/Users/baimac/Documents/Playground/foodcrm-pro/.env.example).
+Include the `VITE_MIREMIX_APP_URL` so the platform launcher can send users into ReMix.
 
 ### Local build and run
 

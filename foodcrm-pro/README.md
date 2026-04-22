@@ -22,6 +22,7 @@ The dev server runs through `server.ts`, which serves the Vite app and the `/api
 - `VITE_FIREBASE_*`: Firebase web app configuration
 - `VITE_FIREBASE_DATABASE_ID`: Firestore database id for the CRM app
 - `VITE_SHARED_ORG_ID`: Shared Firestore org id used by all CRM users
+- `VITE_MIREMIX_APP_URL`: URL for the ReMix tool link on the platform home
 - `RESEND_API_KEY`: Enables real email sending
 - `ORDER_STATUS_FROM_EMAIL`: Sender identity for order status emails
 - `ORDER_STATUS_INTERNAL_EMAILS`: Comma-separated internal recipients for shipment updates

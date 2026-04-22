@@ -18,6 +18,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@platform/*": [
+        "../platform/*"
       ]
     },
     "allowImportingTsExtensions": true,

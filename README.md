@@ -4,13 +4,14 @@ Shared operations platform for 40 Century Grain.
 
 ## Apps
 
-- [foodcrm-pro](./foodcrm-pro): CRM, customers, orders, notifications, and backend integrations
+- [foodcrm-pro](./foodcrm-pro): platform home, CRM, customers, orders, notifications, and backend integrations
 - [miremix-mrp](./miremix-mrp): production planning and fulfillment interface
 
 ## Deploy Docs
 
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
 - [SECRETS_TEMPLATE.md](./SECRETS_TEMPLATE.md)
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ## CI/CD
 
