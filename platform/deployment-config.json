@@ -1,0 +1,25 @@
+{
+  "projectId": "gen-lang-client-0021754998",
+  "projectNumber": "1015963821956",
+  "cloudRunRegion": "us-west1",
+  "sharedOrgId": "org_40centurygrain_shared",
+  "ordersCollection": "orders",
+  "crm": {
+    "serviceName": "foodcrm-pro",
+    "appUrl": "https://foodcrm-pro-1015963821956.us-west1.run.app/",
+    "firestoreDatabaseId": "ai-studio-af887f16-decc-48d2-b6b7-47c85e2eed76"
+  },
+  "remix": {
+    "appUrl": "https://gen-lang-client-0021754998.web.app/",
+    "firestoreDatabaseId": "ai-studio-eb8d88f4-51e8-4643-b410-dd1062becfc3"
+  },
+  "firebaseWebConfig": {
+    "apiKey": "AIzaSyDaFqitHD81GHEdUlKkvVG68r_POj5hJLg",
+    "authDomain": "gen-lang-client-0021754998.firebaseapp.com",
+    "projectId": "gen-lang-client-0021754998",
+    "appId": "1:1015963821956:web:8554aaf0bf511befbf1fd1",
+    "storageBucket": "gen-lang-client-0021754998.firebasestorage.app",
+    "messagingSenderId": "1015963821956",
+    "measurementId": ""
+  }
+}

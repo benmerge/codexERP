@@ -5,6 +5,9 @@ This repo contains two production apps with different deployment targets:
 - `foodcrm-pro`: platform home + CRM frontend + Express backend, deployed to Cloud Run
 - `miremix-mrp`: React SPA deployed to Firebase Hosting
 
+Shared deployment metadata lives in [deployment-config.json](/Users/baimac/Documents/Playground/codexERP/platform/deployment-config.json).
+GitHub Actions loads that file through [export-platform-env.mjs](/Users/baimac/Documents/Playground/codexERP/scripts/export-platform-env.mjs) so app URLs, project ids, and database ids stay aligned.
+
 Current production URLs:
 
 - Platform home / CRM: `https://foodcrm-pro-1015963821956.us-west1.run.app/`
