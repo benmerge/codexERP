@@ -131,6 +131,34 @@ function normalizeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): CRMOrder
   };
 }
 
+function getOrderCanonicalKey(order: CRMOrder) {
+  return order.orderNumber || order.id || order.docId;
+}
+
+function rankOrderPath(rawPath: string) {
+  if (rawPath.includes('/orgs/')) return 2;
+  if (rawPath.includes('/users/')) return 1;
+  return 0;
+}
+
+function dedupeOrders(snapshotDocs: QueryDocumentSnapshot<DocumentData>[]) {
+  const deduped = new Map<string, CRMOrder>();
+
+  snapshotDocs
+    .filter((entry) => isSharedOrgOrder(entry.data()))
+    .map(normalizeOrder)
+    .forEach((order) => {
+      const key = getOrderCanonicalKey(order);
+      const existing = deduped.get(key);
+
+      if (!existing || rankOrderPath(order.rawId) > rankOrderPath(existing.rawId)) {
+        deduped.set(key, order);
+      }
+    });
+
+  return Array.from(deduped.values());
+}
+
 export const crmService = {
   /**
    * Fetches orders with 'Order placed' status from the CRM collection in Firestore
@@ -142,9 +170,7 @@ export const crmService = {
     try {
       const q = query(collectionGroup(db, crmConfig.ordersCollection));
       const snapshot = await getDocs(q);
-      return snapshot.docs
-        .filter((order) => isSharedOrgOrder(order.data()))
-        .map(normalizeOrder)
+      return dedupeOrders(snapshot.docs)
         .filter((order) => isOpenOrder(order.status));
     } catch (error) {
       console.error('Failed to fetch real CRM orders from Firestore:', error);
@@ -168,9 +194,7 @@ export const crmService = {
     const q = query(collectionGroup(db, crmConfig.ordersCollection));
 
     return onSnapshot(q, (snapshot) => {
-      const orders = snapshot.docs
-        .filter((entry) => isSharedOrgOrder(entry.data()))
-        .map(normalizeOrder)
+      const orders = dedupeOrders(snapshot.docs)
         .filter((order) => isOpenOrder(order.status));
       
       callback(orders);

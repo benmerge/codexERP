@@ -6,6 +6,10 @@ export type PlatformTool = {
   href: string;
   accent: string;
   status: 'ready' | 'beta' | 'planned';
+  pricingType?: 'included' | 'manual' | 'paid';
+  priceLabel?: string;
+  provisioningMode?: 'none' | 'manual';
+  rolesAllowed?: string[];
   note?: string;
 };
 
@@ -20,6 +24,8 @@ const resolveToolTitle = (...values: Array<string | undefined>) =>
 
 export const buildDefaultTools = (tools: {
   crmUrl: string;
+  dataCoopUrl: string;
+  ecoStackUrl: string;
   remixUrl: string;
 }): PlatformTool[] => [
   {
@@ -30,7 +36,39 @@ export const buildDefaultTools = (tools: {
     href: tools.crmUrl,
     accent: 'from-emerald-500 to-teal-500',
     status: 'ready',
+    pricingType: 'included',
+    priceLabel: 'Included',
+    provisioningMode: 'none',
+    rolesAllowed: ['admin', 'user'],
     note: 'System of record',
+  },
+  {
+    id: 'data-coop',
+    title: 'Data Coop',
+    name: 'Data Coop',
+    description: 'Join the cooperative, sign data agreements, respond to requests, and open MiData Dash.',
+    href: tools.dataCoopUrl,
+    accent: 'from-sky-400 to-cyan-500',
+    status: 'ready',
+    pricingType: 'paid',
+    priceLabel: '$99/yr',
+    provisioningMode: 'none',
+    rolesAllowed: ['admin', 'user'],
+    note: 'Member participation',
+  },
+  {
+    id: 'eco-stack',
+    title: 'EcoStack',
+    name: 'EcoStack',
+    description: 'Assemble traceable environmental asset packages with review, lineage, and release controls.',
+    href: tools.ecoStackUrl,
+    accent: 'from-lime-400 to-emerald-500',
+    status: 'beta',
+    pricingType: 'manual',
+    priceLabel: 'Pilot',
+    provisioningMode: 'manual',
+    rolesAllowed: ['admin', 'user'],
+    note: 'Asset generator',
   },
   {
     id: 'remix',
@@ -40,6 +78,10 @@ export const buildDefaultTools = (tools: {
     href: tools.remixUrl,
     accent: 'from-amber-400 to-orange-500',
     status: 'ready',
+    pricingType: 'included',
+    priceLabel: 'Included',
+    provisioningMode: 'none',
+    rolesAllowed: ['admin', 'user'],
     note: 'Operations floor',
   },
   {
@@ -50,12 +92,18 @@ export const buildDefaultTools = (tools: {
     href: '#',
     accent: 'from-sky-500 to-indigo-500',
     status: 'planned',
+    pricingType: 'manual',
+    priceLabel: 'Pilot pricing',
+    provisioningMode: 'manual',
+    rolesAllowed: ['admin'],
     note: 'Ready for expansion',
   },
 ];
 
 export const getDefaultToolRegistryEntries = (tools: {
   crmUrl: string;
+  dataCoopUrl: string;
+  ecoStackUrl: string;
   remixUrl: string;
 }): ToolRegistryEntry[] =>
   buildDefaultTools(tools).map((tool, sortOrder) => ({
@@ -88,6 +136,10 @@ export const mergeToolsWithRegistry = (defaults: PlatformTool[], registry: ToolR
       href: entry.href ?? base?.href ?? '#',
       accent: entry.accent ?? base?.accent ?? 'from-slate-500 to-slate-700',
       status: entry.status ?? base?.status ?? 'planned',
+      pricingType: entry.pricingType ?? base?.pricingType ?? 'manual',
+      priceLabel: entry.priceLabel ?? base?.priceLabel,
+      provisioningMode: entry.provisioningMode ?? base?.provisioningMode ?? 'manual',
+      rolesAllowed: entry.rolesAllowed ?? base?.rolesAllowed ?? ['admin', 'user'],
       note: entry.note ?? base?.note,
     });
   }

@@ -22,6 +22,8 @@ type ToolDraft = ToolRegistryEntry & {
 };
 
 const statusOptions: Array<ToolDraft['status']> = ['ready', 'beta', 'planned'];
+const pricingOptions: Array<NonNullable<ToolDraft['pricingType']>> = ['included', 'manual', 'paid'];
+const provisioningOptions: Array<NonNullable<ToolDraft['provisioningMode']>> = ['none', 'manual'];
 
 const defaultAccent = 'from-slate-500 to-slate-700';
 
@@ -34,6 +36,9 @@ const createBlankDraft = (): ToolDraft => ({
   href: '',
   accent: defaultAccent,
   status: 'planned',
+  pricingType: 'manual',
+  priceLabel: '',
+  provisioningMode: 'manual',
   note: '',
   enabled: true,
   sortOrder: 0,
@@ -50,6 +55,9 @@ const toDraft = (id: string, data: Partial<ToolRegistryEntry>, sortOrder: number
     href: data.href ?? '',
     accent: data.accent ?? defaultAccent,
     status: data.status ?? 'planned',
+    pricingType: data.pricingType ?? 'manual',
+    priceLabel: data.priceLabel ?? '',
+    provisioningMode: data.provisioningMode ?? 'manual',
     note: data.note ?? '',
     enabled: data.enabled !== false,
     sortOrder,
@@ -67,6 +75,9 @@ const normalizePayload = (draft: ToolDraft) => {
     href: draft.href.trim(),
     accent: draft.accent.trim() || defaultAccent,
     status: draft.status ?? 'planned',
+    pricingType: draft.pricingType ?? 'manual',
+    priceLabel: draft.priceLabel?.trim() ?? '',
+    provisioningMode: draft.provisioningMode ?? 'manual',
     note: draft.note.trim(),
     enabled: draft.enabled !== false,
     sortOrder: Number.isFinite(draft.sortOrder) ? draft.sortOrder ?? 0 : 0,
@@ -89,6 +100,8 @@ export function ManageTools() {
     () =>
       getDefaultToolRegistryEntries({
         crmUrl: '/crm',
+        dataCoopUrl: crmConfig.dataCoopAppUrl ?? '/data-coop',
+        ecoStackUrl: crmConfig.ecoStackAppUrl ?? '/eco-stack',
         remixUrl: crmConfig.remixAppUrl ?? crmConfig.appUrl,
       }),
     []
@@ -465,7 +478,7 @@ export function ManageTools() {
                     />
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-3">
+                  <div className="grid gap-4 lg:grid-cols-6">
                     <div className="space-y-2">
                       <Label htmlFor={`status-${tool.originalId}`}>Status</Label>
                       <select
@@ -481,6 +494,48 @@ export function ManageTools() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`pricing-${tool.originalId}`}>Pricing</Label>
+                      <select
+                        id={`pricing-${tool.originalId}`}
+                        value={tool.pricingType ?? 'manual'}
+                        onChange={(event) => updateTool(tool.originalId, { pricingType: event.target.value as ToolDraft['pricingType'] })}
+                        disabled={disabled}
+                        className="h-8 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 dark:bg-input/30 dark:disabled:bg-input/80"
+                      >
+                        {pricingOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`provisioning-${tool.originalId}`}>Provisioning</Label>
+                      <select
+                        id={`provisioning-${tool.originalId}`}
+                        value={tool.provisioningMode ?? 'manual'}
+                        onChange={(event) => updateTool(tool.originalId, { provisioningMode: event.target.value as ToolDraft['provisioningMode'] })}
+                        disabled={disabled}
+                        className="h-8 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 dark:bg-input/30 dark:disabled:bg-input/80"
+                      >
+                        {provisioningOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`price-label-${tool.originalId}`}>Price Label</Label>
+                      <Input
+                        id={`price-label-${tool.originalId}`}
+                        value={tool.priceLabel ?? ''}
+                        onChange={(event) => updateTool(tool.originalId, { priceLabel: event.target.value })}
+                        disabled={disabled}
+                        placeholder="Included or $49/mo"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`accent-${tool.originalId}`}>Accent</Label>

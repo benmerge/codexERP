@@ -1,9 +1,12 @@
-import React, { useRef } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle, Building2, X, Grid2x2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, useSearchParams } from 'react-router-dom';
+import { LayoutDashboard, Users, UserPlus, KanbanSquare, ShoppingCart, Package, Truck, Menu, LogOut, Upload, RotateCcw, AlertTriangle, Building2, X, Grid2x2, MapPinned } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../../data/AppContext';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { db } from '../../firebase';
+import { crmAppConfig } from '../../config';
+import { consumeToolLaunchSession, resolveToolLaunchSession } from '../../platform/launch';
 
 const ClientLogoUpload = () => {
   const { clientLogo, updateClientLogo } = useAppContext();
@@ -71,6 +74,7 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
   const navItems = [
     { icon: Grid2x2, label: 'Apps', path: '/' },
     { icon: LayoutDashboard, label: 'Dashboard', path: '/crm' },
+    { icon: MapPinned, label: 'CRM Core', path: '/crm/core' },
     { icon: Users, label: 'Customers', path: '/crm/customers' },
     { icon: UserPlus, label: 'Prospects', path: '/crm/prospects' },
     { icon: KanbanSquare, label: 'Kanban Board', path: '/crm/kanban' },
@@ -192,6 +196,42 @@ const Sidebar = ({ onClose }: { onClose?: () => void }) => {
 
 export const Layout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [launchMessage, setLaunchMessage] = useState<string | null>(null);
+  const { user } = useAppContext();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const launchId = searchParams.get('launchId');
+    if (!launchId || !user) return;
+
+    let isMounted = true;
+
+    void (async () => {
+      const launch = await resolveToolLaunchSession({
+        db,
+        launchId,
+        orgId: crmAppConfig.sharedOrgId,
+      });
+
+      if (!launch || launch.toolId !== 'crm' || launch.userId !== user.uid) return;
+
+      await consumeToolLaunchSession({
+        db,
+        launchId,
+        orgId: crmAppConfig.sharedOrgId,
+      });
+
+      if (!isMounted) return;
+      setLaunchMessage(`Opened from Platform Home for ${user.email}.`);
+      const next = new URLSearchParams(searchParams);
+      next.delete('launchId');
+      setSearchParams(next, { replace: true });
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [searchParams, setSearchParams, user]);
 
   return (
     <div className="crm-shell flex h-screen w-full overflow-hidden font-sans">
@@ -223,6 +263,11 @@ export const Layout = () => {
             </div>
           </div>
         </header>
+        {launchMessage ? (
+          <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-800 md:px-6">
+            {launchMessage}
+          </div>
+        ) : null}
         <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 xl:p-8">
           <div className="mx-auto max-w-[1600px]">
             <Outlet />

@@ -268,6 +268,534 @@ service cloud.firestore {
              (!('sourceApp' in data) || data.sourceApp is string);
     }
 
+    function isValidCanonicalOrder(data, orgId, orderId) {
+      return isValidOrder(data) &&
+             data.id == orderId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
+    function isValidCanonicalSupplier(data, orgId, supplierId) {
+      return isValidSupplier(data) &&
+             data.id == supplierId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('sourceApp' in data) || data.sourceApp is string);
+    }
+
+    function isValidCrmAccount(data, orgId, accountId) {
+      return data.keys().hasOnly(['id', 'orgId', 'displayName', 'legalName', 'accountType', 'verticalPack', 'ownerUserId', 'ownerEmail', 'pipelineStage', 'customerCategory', 'hasCurrentQuarterOrder', 'lastOrderDate', 'territoryId', 'territoryLabel', 'tags', 'status', 'createdAt', 'updatedAt', 'sourceApp']) &&
+             data.id is string &&
+             data.id == accountId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.displayName is string &&
+             data.displayName.size() > 0 &&
+             data.displayName.size() < 200 &&
+             (!('legalName' in data) || data.legalName == null || (data.legalName is string && data.legalName.size() < 200)) &&
+             data.accountType in ['retailer', 'distributor', 'brand', 'broker', 'institution', 'other'] &&
+             data.verticalPack in ['core', 'food', 'fiber'] &&
+             (!('ownerUserId' in data) || data.ownerUserId == null || data.ownerUserId is string) &&
+             (!('ownerEmail' in data) || data.ownerEmail == null || (data.ownerEmail is string && data.ownerEmail.size() < 200)) &&
+             (!('pipelineStage' in data) || data.pipelineStage == null || data.pipelineStage in ['Lead', 'Contacted', 'Proposal', 'Closed Won', 'Closed Lost']) &&
+             (!('customerCategory' in data) || data.customerCategory == null || data.customerCategory in ['Retail', 'Wholesale', 'Distributor', 'Partner', 'Government', 'Non-Profit', 'Agriculture', 'Science', 'Maintenance']) &&
+             (!('hasCurrentQuarterOrder' in data) || data.hasCurrentQuarterOrder is bool) &&
+             (!('lastOrderDate' in data) || data.lastOrderDate == null || data.lastOrderDate is string) &&
+             (!('territoryId' in data) || data.territoryId == null || data.territoryId is string) &&
+             (!('territoryLabel' in data) || data.territoryLabel == null || data.territoryLabel is string) &&
+             (!('tags' in data) || data.tags is list) &&
+             data.status in ['active', 'prospect', 'inactive'] &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
+             (!('sourceApp' in data) || data.sourceApp == null || data.sourceApp is string);
+    }
+
+    function isValidCrmContact(data, orgId, contactId) {
+      return data.keys().hasOnly(['id', 'orgId', 'accountId', 'linkedLocationId', 'name', 'email', 'phone', 'title', 'contactType', 'isPrimaryBuyer', 'isActive', 'createdAt', 'updatedAt', 'sourceApp']) &&
+             data.id is string &&
+             data.id == contactId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.accountId is string &&
+             data.accountId.size() > 0 &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() < 200 &&
+             (!('linkedLocationId' in data) || data.linkedLocationId == null || data.linkedLocationId is string) &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() < 200)) &&
+             (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() < 50)) &&
+             (!('title' in data) || data.title == null || (data.title is string && data.title.size() < 200)) &&
+             data.contactType in ['buyer', 'operations', 'finance', 'executive', 'other'] &&
+             data.isPrimaryBuyer is bool &&
+             data.isActive is bool &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
+             (!('sourceApp' in data) || data.sourceApp == null || data.sourceApp is string);
+    }
+
+    function isValidCrmLocation(data, orgId, locationId) {
+      return data.keys().hasOnly(['id', 'orgId', 'name', 'locationType', 'rawAddress', 'normalizedAddress', 'city', 'state', 'region', 'territoryLabel', 'latitude', 'longitude', 'geoProvider', 'providerPlaceId', 'showOnMap', 'isBuyerOffice', 'isDoor', 'createdAt', 'updatedAt', 'sourceApp']) &&
+             data.id is string &&
+             data.id == locationId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() < 200 &&
+             data.locationType in ['buyer-office', 'store-door', 'warehouse', 'hq', 'other'] &&
+             (!('rawAddress' in data) || data.rawAddress == null || data.rawAddress is string) &&
+             (!('normalizedAddress' in data) || data.normalizedAddress == null || data.normalizedAddress is string) &&
+             (!('city' in data) || data.city == null || data.city is string) &&
+             (!('state' in data) || data.state == null || data.state is string) &&
+             (!('region' in data) || data.region == null || data.region is string) &&
+             (!('territoryLabel' in data) || data.territoryLabel == null || data.territoryLabel is string) &&
+             (!('latitude' in data) || data.latitude == null || data.latitude is number) &&
+             (!('longitude' in data) || data.longitude == null || data.longitude is number) &&
+             (!('geoProvider' in data) || data.geoProvider == null || data.geoProvider in ['google-maps']) &&
+             (!('providerPlaceId' in data) || data.providerPlaceId == null || data.providerPlaceId is string) &&
+             data.showOnMap is bool &&
+             data.isBuyerOffice is bool &&
+             data.isDoor is bool &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
+             (!('sourceApp' in data) || data.sourceApp == null || data.sourceApp is string);
+    }
+
+    function isValidCrmAccountLocationLink(data, orgId, linkId) {
+      return data.keys().hasOnly(['id', 'orgId', 'accountId', 'locationId', 'locationType', 'isBuyerOffice', 'isDoor', 'showOnMap', 'isPrimary', 'travelPriority', 'createdAt', 'updatedAt', 'sourceApp']) &&
+             data.id is string &&
+             data.id == linkId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.accountId is string &&
+             data.accountId.size() > 0 &&
+             data.locationId is string &&
+             data.locationId.size() > 0 &&
+             data.locationType in ['buyer-office', 'store-door', 'warehouse', 'hq', 'other'] &&
+             data.isBuyerOffice is bool &&
+             data.isDoor is bool &&
+             data.showOnMap is bool &&
+             data.isPrimary is bool &&
+             (!('travelPriority' in data) || data.travelPriority == null || data.travelPriority is number) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
+             (!('sourceApp' in data) || data.sourceApp == null || data.sourceApp is string);
+    }
+
+    function isValidCrmTerritory(data, orgId, territoryId) {
+      return data.keys().hasOnly(['id', 'orgId', 'label', 'scope', 'state', 'city', 'region', 'customRule', 'createdAt', 'updatedAt', 'sourceApp']) &&
+             data.id is string &&
+             data.id == territoryId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.label is string &&
+             data.label.size() > 0 &&
+             data.label.size() < 200 &&
+             data.scope in ['state', 'city', 'region', 'custom'] &&
+             (!('state' in data) || data.state == null || data.state is string) &&
+             (!('city' in data) || data.city == null || data.city is string) &&
+             (!('region' in data) || data.region == null || data.region is string) &&
+             (!('customRule' in data) || data.customRule == null || data.customRule is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
+             (!('sourceApp' in data) || data.sourceApp == null || data.sourceApp is string);
+    }
+
+    function isValidPlatformEvent(data, orgId, eventId) {
+      return data.keys().hasOnly(['id', 'action', 'actorEmail', 'actorUserId', 'createdAt', 'description', 'orgId', 'recordId', 'recordType', 'sourceApp']) &&
+             data.id is string &&
+             data.id == eventId &&
+             data.action in ['created', 'updated', 'deleted', 'seeded'] &&
+             (!('actorEmail' in data) || data.actorEmail == null || (data.actorEmail is string && data.actorEmail.size() < 200)) &&
+             (!('actorUserId' in data) || data.actorUserId == null || (data.actorUserId is string && data.actorUserId.size() < 200)) &&
+             data.createdAt is string &&
+             data.description is string &&
+             data.description.size() > 0 &&
+             data.description.size() < 500 &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.recordId is string &&
+             data.recordId.size() > 0 &&
+             data.recordId.size() < 200 &&
+             data.recordType is string &&
+             data.recordType.size() > 0 &&
+             data.recordType.size() < 100 &&
+             data.sourceApp is string &&
+             data.sourceApp.size() < 100;
+    }
+
+    function isValidEntitlement(data, orgId, toolId) {
+      return data.keys().hasOnly(['toolId', 'status', 'plan', 'activatedAt', 'expiresAt', 'billingSubscriptionId', 'source', 'pricingType', 'provisioningStatus', 'provisioningRequestedAt', 'provisioningCompletedAt', 'failureReason', 'rolesGranted', 'updatedAt']) &&
+             data.toolId is string &&
+             data.toolId == toolId &&
+             data.status in ['active', 'inactive', 'pending', 'suspended', 'expired'] &&
+             (!('plan' in data) || data.plan == null || data.plan is string) &&
+             (!('activatedAt' in data) || data.activatedAt == null || data.activatedAt is string) &&
+             (!('expiresAt' in data) || data.expiresAt == null || data.expiresAt is string) &&
+             (!('billingSubscriptionId' in data) || data.billingSubscriptionId == null || data.billingSubscriptionId is string) &&
+             (!('source' in data) || data.source == null || data.source is string) &&
+             (!('pricingType' in data) || data.pricingType in ['included', 'manual', 'paid']) &&
+             (!('provisioningStatus' in data) || data.provisioningStatus in ['not_required', 'pending', 'ready', 'failed']) &&
+             (!('provisioningRequestedAt' in data) || data.provisioningRequestedAt == null || data.provisioningRequestedAt is string) &&
+             (!('provisioningCompletedAt' in data) || data.provisioningCompletedAt == null || data.provisioningCompletedAt is string) &&
+             (!('failureReason' in data) || data.failureReason == null || data.failureReason is string) &&
+             (!('rolesGranted' in data) || data.rolesGranted is list) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidLaunchSession(data, orgId, launchId) {
+      return data.keys().hasOnly(['id', 'createdAt', 'launchedAt', 'launcherToolId', 'orgId', 'returnUrl', 'status', 'targetUrl', 'toolId', 'userEmail', 'userId']) &&
+             data.id is string &&
+             data.id == launchId &&
+             data.createdAt is string &&
+             (!('launchedAt' in data) || data.launchedAt == null || data.launchedAt is string) &&
+             data.launcherToolId is string &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.returnUrl is string &&
+             data.targetUrl is string &&
+             data.status in ['created', 'consumed'] &&
+             data.toolId is string &&
+             data.userId is string &&
+             (!('userEmail' in data) || data.userEmail == null || data.userEmail is string);
+    }
+
+    function isValidBillingSubscription(data, toolId) {
+      return data.keys().hasOnly(['provider', 'status', 'toolId', 'amount', 'currency', 'renewalDate', 'plan', 'createdAt', 'updatedAt']) &&
+             data.provider is string &&
+             data.provider.size() > 0 &&
+             data.provider.size() < 100 &&
+             data.status in ['active', 'trialing', 'past_due', 'canceled', 'incomplete', 'paused'] &&
+             data.toolId is string &&
+             data.toolId == toolId &&
+             (!('amount' in data) || data.amount == null || data.amount is number) &&
+             (!('currency' in data) || data.currency == null || data.currency is string) &&
+             (!('renewalDate' in data) || data.renewalDate == null || data.renewalDate is string) &&
+             (!('plan' in data) || data.plan == null || data.plan is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidCoopMember(data, orgId, memberId) {
+      return data.keys().hasOnly(['id', 'userId', 'orgId', 'displayName', 'email', 'memberType', 'status', 'plan', 'joinedAt', 'approvedAt', 'defaultHome', 'operationName', 'createdAt', 'updatedAt']) &&
+             data.id is string &&
+             data.id == memberId &&
+             data.userId is string &&
+             data.userId == memberId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             (!('displayName' in data) || data.displayName == null || data.displayName is string) &&
+             (!('email' in data) || data.email == null || data.email == '' || (data.email is string && isValidEmail(data.email))) &&
+             (!('memberType' in data) || data.memberType == null || data.memberType is string) &&
+             (!('status' in data) || data.status in ['invited', 'enrolling', 'active', 'pending_review', 'needs_changes']) &&
+             (!('plan' in data) || data.plan == null || data.plan is string) &&
+             (!('joinedAt' in data) || data.joinedAt == null || data.joinedAt is string) &&
+             (!('approvedAt' in data) || data.approvedAt == null || data.approvedAt is string) &&
+             (!('defaultHome' in data) || data.defaultHome == null || data.defaultHome is string) &&
+             (!('operationName' in data) || data.operationName == null || data.operationName is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidCoopAgreement(data, agreementId, orgId) {
+      return data.keys().hasOnly(['memberId', 'agreementType', 'agreementVersion', 'status', 'signedAt', 'signedByUserId', 'plan', 'documentRef', 'title', 'createdAt', 'updatedAt']) &&
+             data.memberId is string &&
+             agreementId.matches('^' + data.memberId + '-.*$') &&
+             data.agreementType is string &&
+             data.agreementType.size() > 0 &&
+             data.agreementType.size() < 100 &&
+             data.agreementVersion is string &&
+             data.agreementVersion.size() > 0 &&
+             data.agreementVersion.size() < 50 &&
+             data.status in ['required', 'signed'] &&
+             (!('signedAt' in data) || data.signedAt == null || data.signedAt is string) &&
+             (!('signedByUserId' in data) || data.signedByUserId == null || data.signedByUserId is string) &&
+             (!('plan' in data) || data.plan == null || data.plan is string) &&
+             (!('documentRef' in data) || data.documentRef == null || data.documentRef is string) &&
+             (!('title' in data) || data.title == null || data.title is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string) &&
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(data.memberId));
+    }
+
+    function isValidCoopVerification(data, verificationId, orgId) {
+      return data.keys().hasOnly(['memberId', 'type', 'status', 'reviewerUserId', 'evidenceRefs', 'submittedAt', 'reviewedAt', 'notes', 'createdAt', 'updatedAt']) &&
+             verificationId is string &&
+             data.memberId is string &&
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(data.memberId)) &&
+             data.type is string &&
+             data.type.size() > 0 &&
+             data.type.size() < 100 &&
+             data.status in ['not_started', 'submitted', 'approved', 'rejected', 'needs_changes'] &&
+             (!('reviewerUserId' in data) || data.reviewerUserId == null || data.reviewerUserId is string) &&
+             (!('evidenceRefs' in data) || data.evidenceRefs is list) &&
+             (!('submittedAt' in data) || data.submittedAt == null || data.submittedAt is string) &&
+             (!('reviewedAt' in data) || data.reviewedAt == null || data.reviewedAt is string) &&
+             (!('notes' in data) || data.notes == null || data.notes is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidDataAsset(data, orgId) {
+      return data.keys().hasOnly(['memberId', 'assetType', 'title', 'status', 'notes', 'submittedAt', 'reviewedAt', 'fileName', 'contentType', 'sizeBytes', 'storagePath', 'downloadUrl', 'uploadedBy', 'createdAt', 'updatedAt']) &&
+             data.memberId is string &&
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(data.memberId)) &&
+             data.assetType is string &&
+             data.assetType.size() > 0 &&
+             data.assetType.size() < 100 &&
+             data.title is string &&
+             data.title.size() > 0 &&
+             data.title.size() < 300 &&
+             data.status in ['required', 'submitted', 'accepted'] &&
+             (!('notes' in data) || data.notes == null || data.notes is string) &&
+             (!('submittedAt' in data) || data.submittedAt == null || data.submittedAt is string) &&
+             (!('reviewedAt' in data) || data.reviewedAt == null || data.reviewedAt is string) &&
+             (!('fileName' in data) || data.fileName == null || data.fileName is string) &&
+             (!('contentType' in data) || data.contentType == null || data.contentType is string) &&
+             (!('sizeBytes' in data) || data.sizeBytes == null || (data.sizeBytes is number && data.sizeBytes >= 0)) &&
+             (!('storagePath' in data) || data.storagePath == null || data.storagePath is string) &&
+             (!('downloadUrl' in data) || data.downloadUrl == null || data.downloadUrl is string) &&
+             (!('uploadedBy' in data) || data.uploadedBy == null || data.uploadedBy is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidDataPermission(data, orgId) {
+      return data.keys().hasOnly(['memberId', 'scope', 'purpose', 'status', 'grantedAt', 'revokedAt', 'agreementVersion', 'programId', 'createdAt', 'updatedAt']) &&
+             data.memberId is string &&
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(data.memberId)) &&
+             data.scope is string &&
+             data.scope.size() > 0 &&
+             data.scope.size() < 100 &&
+             data.purpose is string &&
+             data.purpose.size() > 0 &&
+             data.purpose.size() < 300 &&
+             data.status in ['granted', 'revoked', 'pending'] &&
+             (!('grantedAt' in data) || data.grantedAt == null || data.grantedAt is string) &&
+             (!('revokedAt' in data) || data.revokedAt == null || data.revokedAt is string) &&
+             (!('agreementVersion' in data) || data.agreementVersion == null || data.agreementVersion is string) &&
+             (!('programId' in data) || data.programId == null || data.programId is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidDataAccessGrant(data, orgId) {
+      return data.keys().hasOnly(['memberId', 'programId', 'buyerId', 'dataTypes', 'status', 'grantedAt', 'expiresAt', 'linkedPermissionIds', 'createdAt', 'updatedAt']) &&
+             data.memberId is string &&
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(data.memberId)) &&
+             data.programId is string &&
+             data.programId.size() > 0 &&
+             data.programId.size() < 100 &&
+             (!('buyerId' in data) || data.buyerId == null || data.buyerId is string) &&
+             data.dataTypes is list &&
+             data.status in ['active', 'pending', 'expired'] &&
+             (!('grantedAt' in data) || data.grantedAt == null || data.grantedAt is string) &&
+             (!('expiresAt' in data) || data.expiresAt == null || data.expiresAt is string) &&
+             (!('linkedPermissionIds' in data) || data.linkedPermissionIds is list) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidDataRequest(data, orgId) {
+      return data.keys().hasOnly(['memberId', 'type', 'status', 'title', 'description', 'dueAt', 'requestedBy', 'targetProgram', 'createdAt', 'updatedAt']) &&
+             data.memberId is string &&
+             exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(data.memberId)) &&
+             data.type is string &&
+             data.type.size() > 0 &&
+             data.type.size() < 100 &&
+             data.status in ['open', 'submitted', 'completed'] &&
+             data.title is string &&
+             data.title.size() > 0 &&
+             data.title.size() < 300 &&
+             data.description is string &&
+             data.description.size() > 0 &&
+             data.description.size() < 1000 &&
+             (!('dueAt' in data) || data.dueAt == null || data.dueAt is string) &&
+             (!('requestedBy' in data) || data.requestedBy == null || data.requestedBy is string) &&
+             (!('targetProgram' in data) || data.targetProgram == null || data.targetProgram is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidCrmCoreFeedback(data, orgId, feedbackId) {
+      return data.keys().hasOnly(['id', 'orgId', 'category', 'title', 'details', 'status', 'relatedAccountId', 'sourcePage', 'submittedByEmail', 'submittedByUserId', 'createdAt', 'updatedAt']) &&
+             data.id is string &&
+             data.id == feedbackId &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.category in ['bug', 'idea', 'data', 'ui', 'import', 'other'] &&
+             data.title is string &&
+             data.title.size() > 0 &&
+             data.title.size() < 200 &&
+             data.details is string &&
+             data.details.size() > 0 &&
+             data.details.size() < 5000 &&
+             data.status in ['new', 'triaged', 'resolved'] &&
+             (!('relatedAccountId' in data) || data.relatedAccountId == null || data.relatedAccountId is string) &&
+             data.sourcePage is string &&
+             data.sourcePage.size() > 0 &&
+             data.sourcePage.size() < 100 &&
+             (!('submittedByEmail' in data) || data.submittedByEmail == null || (data.submittedByEmail is string && isValidEmail(data.submittedByEmail))) &&
+             (!('submittedByUserId' in data) || data.submittedByUserId == null || data.submittedByUserId is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidProject(data, orgId) {
+      return data.keys().hasOnly(['orgId', 'name', 'geography', 'methodologyFit', 'programType', 'claimFocus', 'status', 'createdAt', 'updatedAt']) &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() < 300 &&
+             data.geography is string &&
+             data.geography.size() > 0 &&
+             data.geography.size() < 300 &&
+             data.methodologyFit in ['ecostack-core', 'soil-carbon', 'biodiversity-stewardship', 'water-resilience'] &&
+             data.programType in ['stacked-credit', 'insetting', 'data-licensing'] &&
+             data.claimFocus in ['stacked', 'carbon', 'biodiversity', 'water'] &&
+             data.status in ['draft', 'active'] &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidEcoStackPackage(data, orgId) {
+      return data.keys().hasOnly(['orgId', 'projectId', 'releasePeriod', 'status', 'currentVersionId', 'createdAt', 'updatedAt']) &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.projectId is string &&
+             data.releasePeriod is string &&
+             data.releasePeriod.size() > 0 &&
+             data.releasePeriod.size() < 100 &&
+             data.status in ['draft', 'in_review', 'approved', 'released', 'superseded'] &&
+             (!('currentVersionId' in data) || data.currentVersionId == null || data.currentVersionId is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidEcoStackPackageVersion(data, orgId) {
+      return data.keys().hasOnly(['orgId', 'packageId', 'projectId', 'methodologyId', 'modelRunId', 'versionNumber', 'status', 'completenessStatus', 'generatedBy', 'reviewedBy', 'approvedBy', 'releasedAt', 'createdAt', 'updatedAt']) &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.packageId is string &&
+             data.projectId is string &&
+             (!('methodologyId' in data) || data.methodologyId == null || data.methodologyId is string) &&
+             (!('modelRunId' in data) || data.modelRunId == null || data.modelRunId is string) &&
+             data.versionNumber is number &&
+             data.status in ['draft', 'in_review', 'approved', 'released', 'superseded'] &&
+             data.completenessStatus in ['incomplete', 'ready'] &&
+             (!('generatedBy' in data) || data.generatedBy == null || data.generatedBy is string) &&
+             (!('reviewedBy' in data) || data.reviewedBy == null || data.reviewedBy is string) &&
+             (!('approvedBy' in data) || data.approvedBy == null || data.approvedBy is string) &&
+             (!('releasedAt' in data) || data.releasedAt == null || data.releasedAt is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidEcoStackLayerRecord(data) {
+      return data.keys().hasOnly(['packageVersionId', 'layerType', 'status', 'summary', 'createdAt', 'updatedAt']) &&
+             data.packageVersionId is string &&
+             data.layerType in ['provenance', 'carbon', 'biodiversity', 'water', 'community-impact'] &&
+             data.status in ['required', 'ready', 'informational'] &&
+             data.summary is string &&
+             data.summary.size() > 0 &&
+             data.summary.size() < 1000 &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidEcoStackSourceReference(data) {
+      return data.keys().hasOnly(['packageVersionId', 'sourceType', 'sourceRecordId', 'originSystem', 'createdAt']) &&
+             data.packageVersionId is string &&
+             data.sourceType is string &&
+             data.sourceType.size() > 0 &&
+             data.sourceType.size() < 200 &&
+             data.sourceRecordId is string &&
+             data.sourceRecordId.size() > 0 &&
+             data.sourceRecordId.size() < 300 &&
+             data.originSystem is string &&
+             data.originSystem.size() > 0 &&
+             data.originSystem.size() < 200 &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string);
+    }
+
+    function isValidEcoStackTransformation(data) {
+      return data.keys().hasOnly(['packageVersionId', 'transformationType', 'methodVersion', 'logicReference', 'createdAt']) &&
+             data.packageVersionId is string &&
+             data.transformationType is string &&
+             data.transformationType.size() > 0 &&
+             data.transformationType.size() < 200 &&
+             data.methodVersion is string &&
+             data.methodVersion.size() > 0 &&
+             data.methodVersion.size() < 100 &&
+             data.logicReference is string &&
+             data.logicReference.size() > 0 &&
+             data.logicReference.size() < 300 &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string);
+    }
+
+    function isValidEcoStackApprovalRecord(data) {
+      return data.keys().hasOnly(['packageVersionId', 'action', 'actorUserId', 'actorEmail', 'notes', 'createdAt']) &&
+             data.packageVersionId is string &&
+             data.action in ['submitted', 'approved', 'released'] &&
+             (!('actorUserId' in data) || data.actorUserId == null || data.actorUserId is string) &&
+             (!('actorEmail' in data) || data.actorEmail == null || data.actorEmail is string) &&
+             (!('notes' in data) || data.notes == null || data.notes is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string);
+    }
+
+    function isValidEcoStackOutputArtifact(data) {
+      return data.keys().hasOnly(['packageVersionId', 'artifactType', 'status', 'title', 'summary', 'payload', 'createdAt', 'updatedAt']) &&
+             data.packageVersionId is string &&
+             data.artifactType in ['buyer-summary', 'machine-json', 'evidence-index'] &&
+             data.status in ['draft', 'released'] &&
+             (!('title' in data) || data.title == null || (data.title is string && data.title.size() < 200)) &&
+             (!('summary' in data) || data.summary == null || (data.summary is string && data.summary.size() < 2000)) &&
+             (!('payload' in data) || data.payload == null || (data.payload is string && data.payload.size() < 50000)) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidEcoStackMethodology(data, orgId) {
+      return data.keys().hasOnly(['orgId', 'name', 'code', 'version', 'status', 'scope', 'createdAt', 'updatedAt']) &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() < 300 &&
+             data.code is string &&
+             data.code.size() > 0 &&
+             data.code.size() < 100 &&
+             data.version is string &&
+             data.version.size() > 0 &&
+             data.version.size() < 50 &&
+             data.status in ['draft', 'active'] &&
+             data.scope is string &&
+             data.scope.size() > 0 &&
+             data.scope.size() < 500 &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidEcoStackModelRun(data, orgId) {
+      return data.keys().hasOnly(['orgId', 'packageVersionId', 'methodologyId', 'status', 'eligibleMemberCount', 'acceptedAssetCount', 'outputSummary', 'createdAt', 'updatedAt']) &&
+             data.orgId is string &&
+             data.orgId == orgId &&
+             data.packageVersionId is string &&
+             data.methodologyId is string &&
+             data.status in ['draft', 'completed'] &&
+             data.eligibleMemberCount is number &&
+             data.eligibleMemberCount >= 0 &&
+             data.acceptedAssetCount is number &&
+             data.acceptedAssetCount >= 0 &&
+             data.outputSummary is string &&
+             data.outputSummary.size() > 0 &&
+             data.outputSummary.size() < 1000 &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -303,6 +831,49 @@ service cloud.firestore {
         allow delete: if isOrgAdmin(orgId) || isPlatformAdmin();
       }
 
+      match /accounts/{accountId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCrmAccount(request.resource.data, orgId, accountId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /contacts/{contactId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCrmContact(request.resource.data, orgId, contactId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /account_location_links/{linkId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCrmAccountLocationLink(request.resource.data, orgId, linkId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /territories/{territoryId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCrmTerritory(request.resource.data, orgId, territoryId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /crm_core_feedback/{feedbackId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create: if isAuthenticated() &&
+                         isValidCrmCoreFeedback(request.resource.data, orgId, feedbackId) &&
+                         (requesterOrgId() == orgId || isOrgMember(orgId) || isPlatformAdmin());
+        allow update: if isAuthenticated() &&
+                         isValidCrmCoreFeedback(request.resource.data, orgId, feedbackId) &&
+                         (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isOrgAdmin(orgId) || isPlatformAdmin();
+      }
+
       match /customers/{customerId} {
         allow read: if isOrgMember(orgId) || isAdmin();
         allow create, update: if isAuthenticated() &&
@@ -325,6 +896,240 @@ service cloud.firestore {
                                  isValidCanonicalProduct(request.resource.data, orgId, productId) &&
                                  (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
         allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /orders/{orderId} {
+        allow read: if isOrgMember(orgId) || isAdmin() || isSharedOpsUser();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCanonicalOrder(request.resource.data, orgId, orderId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /suppliers/{supplierId} {
+        allow read: if isOrgMember(orgId) || isAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidCanonicalSupplier(request.resource.data, orgId, supplierId) &&
+                                 (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow delete: if requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin();
+      }
+
+      match /events/{eventId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create: if isAuthenticated() &&
+                         isValidPlatformEvent(request.resource.data, orgId, eventId) &&
+                         (requesterOrgId() == orgId || isOrgAdmin(orgId) || isAdmin());
+        allow update, delete: if false;
+      }
+
+      match /entitlements/{toolId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEntitlement(request.resource.data, orgId, toolId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /launch_sessions/{launchId} {
+        allow read: if isAuthenticated() &&
+                       (isOrgAdmin(orgId) ||
+                        isPlatformAdmin() ||
+                        (isOrgMember(orgId) &&
+                         resource.data.userId == request.auth.uid));
+        allow create: if isAuthenticated() &&
+                         isValidLaunchSession(request.resource.data, orgId, launchId) &&
+                         (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow update: if isAuthenticated() &&
+                         isValidLaunchSession(request.resource.data, orgId, launchId) &&
+                         (isOrgAdmin(orgId) ||
+                          isPlatformAdmin() ||
+                          (isOrgMember(orgId) &&
+                           resource.data.userId == request.auth.uid &&
+                           request.resource.data.userId == resource.data.userId));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /billing_subscriptions/{subscriptionId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidBillingSubscription(request.resource.data, request.resource.data.toolId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /coop_members/{memberId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) && request.auth.uid == memberId);
+        allow create, update: if isAuthenticated() &&
+                                 isValidCoopMember(request.resource.data, orgId, memberId) &&
+                                 (isOrgAdmin(orgId) ||
+                                  isPlatformAdmin() ||
+                                  (isOrgMember(orgId) && request.auth.uid == memberId));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /coop_agreements/{agreementId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) &&
+                        exists(/databases/$(database)/documents/orgs/$(orgId)/coop_members/$(request.auth.uid)) &&
+                        resource.data.memberId == request.auth.uid);
+        allow create, update: if isAuthenticated() &&
+                                 isValidCoopAgreement(request.resource.data, agreementId, orgId) &&
+                                 (isOrgAdmin(orgId) ||
+                                  isPlatformAdmin() ||
+                                 (isOrgMember(orgId) &&
+                                   request.resource.data.memberId == request.auth.uid));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /coop_verifications/{verificationId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) &&
+                        resource.data.memberId == request.auth.uid);
+        allow create, update: if isAuthenticated() &&
+                                 isValidCoopVerification(request.resource.data, verificationId, orgId) &&
+                                 (isOrgAdmin(orgId) ||
+                                  isPlatformAdmin() ||
+                                  (isOrgMember(orgId) &&
+                                   request.resource.data.memberId == request.auth.uid &&
+                                   (request.resource.data.status in ['not_started', 'submitted'])));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /data_assets/{assetId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) &&
+                        resource.data.memberId == request.auth.uid);
+        allow create, update: if isAuthenticated() &&
+                                 isValidDataAsset(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) ||
+                                  isPlatformAdmin() ||
+                                  (isOrgMember(orgId) &&
+                                   request.resource.data.memberId == request.auth.uid));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /data_permissions/{permissionId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) &&
+                        resource.data.memberId == request.auth.uid);
+        allow create, update: if isAuthenticated() &&
+                                 isValidDataPermission(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) ||
+                                  isPlatformAdmin() ||
+                                  (isOrgMember(orgId) &&
+                                   request.resource.data.memberId == request.auth.uid));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /data_access_grants/{grantId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) &&
+                        resource.data.memberId == request.auth.uid);
+        allow create, update: if isAuthenticated() &&
+                                 isValidDataAccessGrant(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /data_requests/{requestId} {
+        allow read: if isOrgAdmin(orgId) ||
+                       isPlatformAdmin() ||
+                       (isOrgMember(orgId) &&
+                        resource.data.memberId == request.auth.uid);
+        allow create, update: if isAuthenticated() &&
+                                 isValidDataRequest(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) ||
+                                  isPlatformAdmin() ||
+                                  (isOrgMember(orgId) &&
+                                   request.resource.data.memberId == request.auth.uid));
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /projects/{projectId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidProject(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_packages/{packageId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackPackage(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_package_versions/{versionId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackPackageVersion(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_layer_records/{layerId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackLayerRecord(request.resource.data) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_source_references/{referenceId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackSourceReference(request.resource.data) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_transformations/{transformationId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackTransformation(request.resource.data) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_approval_records/{approvalId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackApprovalRecord(request.resource.data) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_output_artifacts/{artifactId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackOutputArtifact(request.resource.data) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_methodologies/{methodologyId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackMethodology(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /ecostack_model_runs/{modelRunId} {
+        allow read: if isOrgMember(orgId) || isPlatformAdmin();
+        allow create, update: if isAuthenticated() &&
+                                 isValidEcoStackModelRun(request.resource.data, orgId) &&
+                                 (isOrgAdmin(orgId) || isPlatformAdmin());
+        allow delete: if isPlatformAdmin();
       }
     }
 

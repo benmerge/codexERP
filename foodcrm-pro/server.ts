@@ -32,6 +32,42 @@ const orderStatusInternalEmails = (process.env.ORDER_STATUS_INTERNAL_EMAILS || '
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+type CheckoutSessionPayload = {
+  amount?: number | null;
+  currency?: string;
+  orgId: string;
+  plan?: string;
+  returnUrl: string;
+  toolId: string;
+  userEmail?: string | null;
+  userId: string;
+};
+
+type CheckoutSessionResult = {
+  checkoutUrl: string;
+  provider: string;
+  sessionId: string;
+  status: 'created';
+  toolId: string;
+};
+
+const buildManualCheckoutSession = (payload: CheckoutSessionPayload): CheckoutSessionResult => {
+  const sessionId = `manual_${crypto.randomUUID()}`;
+  const url = new URL(payload.returnUrl);
+  url.searchParams.set('checkout', 'success');
+  url.searchParams.set('provider', 'manual');
+  url.searchParams.set('sessionId', sessionId);
+  url.searchParams.set('toolId', payload.toolId);
+
+  return {
+    checkoutUrl: url.toString(),
+    provider: 'manual',
+    sessionId,
+    status: 'created',
+    toolId: payload.toolId,
+  };
+};
+
 // --- API Routes ---
 
 // 1. Fetch Inventory from Google Sheets
@@ -243,6 +279,44 @@ app.post('/api/gemini/process-voice-note', async (req, res) => {
   } catch (error: any) {
     console.error('Error processing voice note:', error);
     res.status(500).json({ success: false, error: error.message || 'Failed to process voice note' });
+  }
+});
+
+app.post('/api/platform/billing/checkout-session', async (req, res) => {
+  try {
+    const payload = req.body as Partial<CheckoutSessionPayload>;
+
+    if (!payload.orgId || !payload.returnUrl || !payload.toolId || !payload.userId) {
+      return res.status(400).json({
+        error: 'orgId, returnUrl, toolId, and userId are required.',
+      });
+    }
+
+    const provider = process.env.BILLING_PROVIDER || 'manual';
+
+    if (provider !== 'manual') {
+      return res.status(501).json({
+        error: `Billing provider "${provider}" is not wired yet in this environment.`,
+      });
+    }
+
+    return res.json(
+      buildManualCheckoutSession({
+        amount: payload.amount ?? null,
+        currency: payload.currency ?? 'usd',
+        orgId: payload.orgId,
+        plan: payload.plan ?? 'checkout-activation',
+        returnUrl: payload.returnUrl,
+        toolId: payload.toolId,
+        userEmail: payload.userEmail ?? null,
+        userId: payload.userId,
+      })
+    );
+  } catch (error: any) {
+    console.error('Error creating checkout session:', error);
+    return res.status(500).json({
+      error: error?.message || 'Unable to create checkout session.',
+    });
   }
 });
 

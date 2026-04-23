@@ -7,9 +7,25 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { crmAppConfig } from '../config';
-import mergeLogo from '../assets/merge-impact-logo.png';
 import { initialCustomers, initialOrders, initialProducts, initialSuppliers, initialTasks } from './mockData';
 import { canManageLocations, canManagePlatform, getEmailDomain, resolveOrgId } from '../platform/shared';
+import {
+  deleteCanonicalRecord,
+  getLegacyCollectionPath,
+  getOrgCollectionPath,
+  seedCanonicalRecord,
+  subscribeToCanonicalCollection,
+  withOrgPlatformMetadata,
+  writePlatformEvent,
+  writeCanonicalRecord,
+} from '../platform/data';
+import {
+  buildCanonicalAccountFromCustomer,
+  buildPrimaryAccountLocationLink,
+  buildPrimaryContactFromCustomer,
+  buildStubLocationForAccount,
+  CRM_CORE_COLLECTIONS,
+} from '../platform/crmCore';
 
 interface AppState {
   user: User | null;
@@ -127,9 +143,7 @@ function removeUndefined(obj: any) {
   return Object.fromEntries(Object.entries(obj).filter(([_, v]) => v !== undefined));
 }
 
-const getLegacyCollectionPath = (orgId: string, collectionName: string) => `users/${orgId}/${collectionName}`;
-
-const getOrgCollectionPath = (orgId: string, collectionName: string) => `orgs/${orgId}/${collectionName}`;
+const asFirestorePayload = (payload: Record<string, unknown>) => payload;
 
 export const normalizeRepData = <T extends { salesRepId?: string, salesRepName?: string, salesRepEmail?: string }>(record: T): T => {
   let { salesRepId, salesRepName, salesRepEmail } = record;
@@ -290,49 +304,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
-    const subscribeToCanonicalCollection = <T,>(
-      collectionName: string,
-      mapDoc: (entry: any) => T,
-      onData: (items: T[]) => void
-    ) =>
-      onSnapshot(
-        collection(db, getOrgCollectionPath(dataId, collectionName)),
-        async (snapshot) => {
-          if (snapshot.empty) {
-            try {
-              const legacySnapshot = await getDocs(collection(db, getLegacyCollectionPath(dataId, collectionName)));
-              if (!legacySnapshot.empty) {
-                const batch = writeBatch(db);
-                legacySnapshot.docs.forEach((entry) => {
-                  batch.set(
-                    doc(db, getOrgCollectionPath(dataId, collectionName), entry.id),
-                    removeUndefined({
-                      id: entry.id,
-                      ...entry.data(),
-                      orgId: dataId,
-                      sourceApp: 'foodcrm-pro',
-                    }),
-                    { merge: true }
-                  );
-                });
-                await batch.commit();
-                return;
-              }
-            } catch (legacyError) {
-              handleFirestoreError(legacyError, OperationType.LIST, getLegacyCollectionPath(dataId, collectionName));
-            }
-
-            onData([]);
-            return;
-          }
-
-          onData(snapshot.docs.map(mapDoc));
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.LIST, getOrgCollectionPath(dataId, collectionName));
-        }
-      );
-
     const userRef = doc(db, 'users', dataId);
     const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -341,66 +312,94 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     const unsubscribeCustomers = subscribeToCanonicalCollection<Customer>(
-      'customers',
-      (entry) => normalizeRepData({ ...entry.data(), id: entry.id } as Customer),
-      (loadedCustomers) => {
-      setCustomers(loadedCustomers);
+      {
+        db,
+        orgId: dataId,
+        collectionName: 'customers',
+        mapDoc: (entry) => normalizeRepData({ ...entry.data(), id: entry.id } as Customer),
+        onData: (loadedCustomers) => {
+          setCustomers(loadedCustomers);
+        },
+        onError: (error, path) => {
+          handleFirestoreError(error, OperationType.LIST, path);
+        },
       }
     );
 
     const unsubscribeTasks = subscribeToCanonicalCollection<Task>(
-      'tasks',
-      (entry) => ({ ...entry.data(), id: entry.id } as Task),
-      (loadedTasks) => {
-      setTasks(loadedTasks);
+      {
+        db,
+        orgId: dataId,
+        collectionName: 'tasks',
+        mapDoc: (entry) => ({ ...entry.data(), id: entry.id } as Task),
+        onData: (loadedTasks) => {
+          setTasks(loadedTasks);
+        },
+        onError: (error, path) => {
+          handleFirestoreError(error, OperationType.LIST, path);
+        },
       }
     );
 
-    const ordersRef = collection(db, `users/${dataId}/orders`);
-    const unsubscribeOrders = onSnapshot(ordersRef, (snapshot) => {
-      const loadedOrders: Order[] = [];
-      snapshot.forEach(doc => {
-        loadedOrders.push(normalizeRepData({ ...doc.data(), id: doc.id } as Order));
-      });
+    const unsubscribeOrders = subscribeToCanonicalCollection<Order>(
+      {
+        db,
+        orgId: dataId,
+        collectionName: 'orders',
+        mapDoc: (entry) => normalizeRepData({ ...entry.data(), id: entry.id } as Order),
+        onData: (loadedOrders) => {
+          const nextStatuses = Object.fromEntries(loadedOrders.map((order) => [order.id, order.status]));
+          if (hasHydratedOrdersRef.current) {
+            loadedOrders.forEach((order) => {
+              const previousStatus = previousOrderStatusesRef.current[order.id];
+              if (!previousStatus || previousStatus === order.status) return;
 
-      const nextStatuses = Object.fromEntries(loadedOrders.map((order) => [order.id, order.status]));
-      if (hasHydratedOrdersRef.current) {
-        loadedOrders.forEach((order) => {
-          const previousStatus = previousOrderStatusesRef.current[order.id];
-          if (!previousStatus || previousStatus === order.status) return;
-
-          if (order.status === 'Shipped' || order.status === 'Delivered') {
-            void sendAutomaticOrderStatusNotification(order);
+              if (order.status === 'Shipped' || order.status === 'Delivered') {
+                void sendAutomaticOrderStatusNotification(order);
+              }
+            });
+          } else {
+            hasHydratedOrdersRef.current = true;
           }
-        });
-      } else {
-        hasHydratedOrdersRef.current = true;
-      }
 
-      previousOrderStatusesRef.current = nextStatuses;
-      setOrders(loadedOrders);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${dataId}/orders`);
-    });
+          previousOrderStatusesRef.current = nextStatuses;
+          setOrders(loadedOrders);
+        },
+        onError: (error, path) => {
+          handleFirestoreError(error, OperationType.LIST, path);
+        },
+      }
+    );
 
     const unsubscribeProducts = subscribeToCanonicalCollection<Product>(
-      'products',
-      (entry) => ({ ...entry.data(), id: entry.id } as Product),
-      (loadedProducts) => {
-      setProducts(loadedProducts);
+      {
+        db,
+        orgId: dataId,
+        collectionName: 'products',
+        mapDoc: (entry) => ({ ...entry.data(), id: entry.id } as Product),
+        onData: (loadedProducts) => {
+          setProducts(loadedProducts);
+        },
+        onError: (error, path) => {
+          handleFirestoreError(error, OperationType.LIST, path);
+        },
       }
     );
 
-    const suppliersRef = collection(db, `users/${dataId}/suppliers`);
-    const unsubscribeSuppliers = onSnapshot(suppliersRef, (snapshot) => {
-      const loadedSuppliers: Supplier[] = [];
-      snapshot.forEach(doc => {
-        loadedSuppliers.push({ ...doc.data(), id: doc.id } as Supplier);
-      });
-      setSuppliers(loadedSuppliers);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${dataId}/suppliers`);
-    });
+    const unsubscribeSuppliers = subscribeToCanonicalCollection<Supplier>(
+      {
+        db,
+        orgId: dataId,
+        collectionName: 'suppliers',
+        mapDoc: (entry) => ({ ...entry.data(), id: entry.id } as Supplier),
+        onData: (loadedSuppliers) => {
+          setSuppliers(loadedSuppliers);
+        },
+        onError: (error, path) => {
+          handleFirestoreError(error, OperationType.LIST, path);
+        },
+      }
+    );
 
     const teamRef = collection(db, `users/${dataId}/team`);
     const unsubscribeTeam = onSnapshot(teamRef, (snapshot) => {
@@ -458,10 +457,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const login = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
+    setAuthError(null);
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : 'Google sign-in failed. Please try email login or check popup permissions.'
+      );
     }
   };
 
@@ -553,18 +558,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const writeCrmCoreRecordsForCustomer = async (customer: Customer, orgId: string) => {
+    const normalizedCustomer = normalizeCustomerStatus(customer);
+    const account = buildCanonicalAccountFromCustomer(normalizedCustomer, orgId);
+    const contact = buildPrimaryContactFromCustomer(normalizedCustomer, orgId);
+    const location = buildStubLocationForAccount(account.id, orgId, account.displayName);
+    const accountLocationLink = buildPrimaryAccountLocationLink(account.id, location.id, orgId, location.locationType);
+
+    await Promise.all([
+      writeCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.accounts, account.id, asFirestorePayload({ ...account })),
+      writeCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.contacts, contact.id, asFirestorePayload({ ...contact })),
+      writeCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.locations, location.id, asFirestorePayload({ ...location })),
+      writeCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.accountLocationLinks, accountLocationLink.id, asFirestorePayload({ ...accountLocationLink })),
+    ]);
+  };
+
+  const deleteCrmCoreRecordsForCustomer = async (customerId: string, orgId: string) => {
+    await Promise.all([
+      deleteCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.accounts, customerId),
+      deleteCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.contacts, `${customerId}-primary`),
+      deleteCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.locations, `${customerId}-hq`),
+      deleteCanonicalRecord(db, orgId, CRM_CORE_COLLECTIONS.accountLocationLinks, `${customerId}-${customerId}-hq`),
+    ]);
+  };
+
   const addCustomer = async (customer: Customer) => {
     const dataId = getDataId(user);
     if (!dataId) return;
-    const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
+    const normalizedCustomer = normalizeCustomerStatus(customer);
+    const customerWithUid = removeUndefined({ ...normalizedCustomer, uid: dataId });
     try {
       await Promise.all([
-        setDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), customerWithUid),
-        setDoc(
-          doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
-          removeUndefined({ ...customerWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        ),
+        writeCanonicalRecord(db, dataId, 'customers', customer.id, customerWithUid),
+        writeCrmCoreRecordsForCustomer(normalizedCustomer, dataId),
       ]);
+      await writePlatformEvent(db, {
+        action: 'created',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Customer ${customer.name} was created in CRM.`,
+        orgId: dataId,
+        recordId: customer.id,
+        recordType: 'customer',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/customers/${customer.id}`);
     }
@@ -575,15 +611,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     try {
       for (const customer of newCustomers) {
-        const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
+        const normalizedCustomer = normalizeCustomerStatus(customer);
+        const customerWithUid = removeUndefined({ ...normalizedCustomer, uid: dataId });
         await Promise.all([
-          setDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), customerWithUid),
-          setDoc(
-            doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
-            removeUndefined({ ...customerWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-          ),
+          writeCanonicalRecord(db, dataId, 'customers', customer.id, customerWithUid),
+          writeCrmCoreRecordsForCustomer(normalizedCustomer, dataId),
         ]);
       }
+      await writePlatformEvent(db, {
+        action: 'created',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `${newCustomers.length} customers were imported into CRM.`,
+        orgId: dataId,
+        recordId: `bulk-customers-${Date.now()}`,
+        recordType: 'customer-import',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/customers (bulk)`);
     }
@@ -592,15 +635,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateCustomer = async (customer: Customer) => {
     const dataId = getDataId(user);
     if (!dataId) return;
-    const customerWithUid = removeUndefined({ ...normalizeCustomerStatus(customer), uid: dataId });
+    const normalizedCustomer = normalizeCustomerStatus(customer);
+    const customerWithUid = removeUndefined({ ...normalizedCustomer, uid: dataId });
     try {
       await Promise.all([
-        setDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), customerWithUid),
-        setDoc(
-          doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
-          removeUndefined({ ...customerWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        ),
+        writeCanonicalRecord(db, dataId, 'customers', customer.id, customerWithUid),
+        writeCrmCoreRecordsForCustomer(normalizedCustomer, dataId),
       ]);
+      await writePlatformEvent(db, {
+        action: 'updated',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Customer ${customer.name} was updated in CRM.`,
+        orgId: dataId,
+        recordId: customer.id,
+        recordType: 'customer',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/customers/${customer.id}`);
     }
@@ -611,9 +661,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     try {
       await Promise.all([
-        deleteDoc(doc(db, getLegacyCollectionPath(dataId, 'customers'), customerId)),
-        deleteDoc(doc(db, getOrgCollectionPath(dataId, 'customers'), customerId)),
+        deleteCanonicalRecord(db, dataId, 'customers', customerId),
+        deleteCrmCoreRecordsForCustomer(customerId, dataId),
       ]);
+      await writePlatformEvent(db, {
+        action: 'deleted',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Customer ${customerId} was deleted from CRM.`,
+        orgId: dataId,
+        recordId: customerId,
+        recordType: 'customer',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${dataId}/customers/${customerId}`);
     }
@@ -624,7 +683,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const orderWithUid = decorateOrderForStorage(order, dataId);
     try {
-      await setDoc(doc(db, `users/${dataId}/orders`, order.id), orderWithUid);
+      await writeCanonicalRecord(db, dataId, 'orders', order.id, orderWithUid);
+      await writePlatformEvent(db, {
+        action: 'created',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Order ${order.id} was created in CRM.`,
+        orgId: dataId,
+        recordId: order.id,
+        recordType: 'order',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/orders/${order.id}`);
     }
@@ -635,7 +703,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const orderWithUid = decorateOrderForStorage(order, dataId);
     try {
-      await setDoc(doc(db, `users/${dataId}/orders`, order.id), orderWithUid);
+      await writeCanonicalRecord(db, dataId, 'orders', order.id, orderWithUid);
+      await writePlatformEvent(db, {
+        action: 'updated',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Order ${order.id} was updated in CRM.`,
+        orgId: dataId,
+        recordId: order.id,
+        recordType: 'order',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/orders/${order.id}`);
     }
@@ -645,7 +722,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const dataId = getDataId(user);
     if (!dataId) return;
     try {
-      await deleteDoc(doc(db, `users/${dataId}/orders`, orderId));
+      await deleteCanonicalRecord(db, dataId, 'orders', orderId);
+      await writePlatformEvent(db, {
+        action: 'deleted',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Order ${orderId} was deleted from CRM.`,
+        orgId: dataId,
+        recordId: orderId,
+        recordType: 'order',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${dataId}/orders/${orderId}`);
     }
@@ -656,13 +742,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const productWithUid = removeUndefined({ ...product, uid: dataId });
     try {
-      await Promise.all([
-        setDoc(doc(db, getLegacyCollectionPath(dataId, 'products'), product.id), productWithUid),
-        setDoc(
-          doc(db, getOrgCollectionPath(dataId, 'products'), product.id),
-          removeUndefined({ ...productWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        ),
-      ]);
+      await writeCanonicalRecord(db, dataId, 'products', product.id, productWithUid);
+      await writePlatformEvent(db, {
+        action: 'created',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Product ${product.name} was created in CRM.`,
+        orgId: dataId,
+        recordId: product.id,
+        recordType: 'product',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/products/${product.id}`);
     }
@@ -673,13 +762,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const productWithUid = removeUndefined({ ...product, uid: dataId });
     try {
-      await Promise.all([
-        setDoc(doc(db, getLegacyCollectionPath(dataId, 'products'), product.id), productWithUid),
-        setDoc(
-          doc(db, getOrgCollectionPath(dataId, 'products'), product.id),
-          removeUndefined({ ...productWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        ),
-      ]);
+      await writeCanonicalRecord(db, dataId, 'products', product.id, productWithUid);
+      await writePlatformEvent(db, {
+        action: 'updated',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Product ${product.name} was updated in CRM.`,
+        orgId: dataId,
+        recordId: product.id,
+        recordType: 'product',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/products/${product.id}`);
     }
@@ -689,10 +781,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const dataId = getDataId(user);
     if (!dataId) return;
     try {
-      await Promise.all([
-        deleteDoc(doc(db, getLegacyCollectionPath(dataId, 'products'), productId)),
-        deleteDoc(doc(db, getOrgCollectionPath(dataId, 'products'), productId)),
-      ]);
+      await deleteCanonicalRecord(db, dataId, 'products', productId);
+      await writePlatformEvent(db, {
+        action: 'deleted',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Product ${productId} was deleted from CRM.`,
+        orgId: dataId,
+        recordId: productId,
+        recordType: 'product',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${dataId}/products/${productId}`);
     }
@@ -703,7 +801,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const supplierWithUid = removeUndefined({ ...supplier, uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/suppliers`, supplier.id), supplierWithUid);
+      await writeCanonicalRecord(db, dataId, 'suppliers', supplier.id, supplierWithUid);
+      await writePlatformEvent(db, {
+        action: 'created',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Supplier ${supplier.name} was created in CRM.`,
+        orgId: dataId,
+        recordId: supplier.id,
+        recordType: 'supplier',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/suppliers/${supplier.id}`);
     }
@@ -714,7 +821,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const supplierWithUid = removeUndefined({ ...supplier, uid: dataId });
     try {
-      await setDoc(doc(db, `users/${dataId}/suppliers`, supplier.id), supplierWithUid);
+      await writeCanonicalRecord(db, dataId, 'suppliers', supplier.id, supplierWithUid);
+      await writePlatformEvent(db, {
+        action: 'updated',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Supplier ${supplier.name} was updated in CRM.`,
+        orgId: dataId,
+        recordId: supplier.id,
+        recordType: 'supplier',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/suppliers/${supplier.id}`);
     }
@@ -724,7 +840,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const dataId = getDataId(user);
     if (!dataId) return;
     try {
-      await deleteDoc(doc(db, `users/${dataId}/suppliers`, supplierId));
+      await deleteCanonicalRecord(db, dataId, 'suppliers', supplierId);
+      await writePlatformEvent(db, {
+        action: 'deleted',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Supplier ${supplierId} was deleted from CRM.`,
+        orgId: dataId,
+        recordId: supplierId,
+        recordType: 'supplier',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${dataId}/suppliers/${supplierId}`);
     }
@@ -735,13 +860,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const taskWithUid = removeUndefined({ ...task, uid: dataId });
     try {
-      await Promise.all([
-        setDoc(doc(db, getLegacyCollectionPath(dataId, 'tasks'), task.id), taskWithUid),
-        setDoc(
-          doc(db, getOrgCollectionPath(dataId, 'tasks'), task.id),
-          removeUndefined({ ...taskWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        ),
-      ]);
+      await writeCanonicalRecord(db, dataId, 'tasks', task.id, taskWithUid);
+      await writePlatformEvent(db, {
+        action: 'created',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Task ${task.title} was created in CRM.`,
+        orgId: dataId,
+        recordId: task.id,
+        recordType: 'task',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/tasks/${task.id}`);
     }
@@ -752,13 +880,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!dataId) return;
     const taskWithUid = removeUndefined({ ...task, uid: dataId });
     try {
-      await Promise.all([
-        setDoc(doc(db, getLegacyCollectionPath(dataId, 'tasks'), task.id), taskWithUid),
-        setDoc(
-          doc(db, getOrgCollectionPath(dataId, 'tasks'), task.id),
-          removeUndefined({ ...taskWithUid, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        ),
-      ]);
+      await writeCanonicalRecord(db, dataId, 'tasks', task.id, taskWithUid);
+      await writePlatformEvent(db, {
+        action: 'updated',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: `Task ${task.title} was updated in CRM.`,
+        orgId: dataId,
+        recordId: task.id,
+        recordType: 'task',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId}/tasks/${task.id}`);
     }
@@ -772,58 +903,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setError(null);
 
     try {
-      const collectionNames = ['customers', 'orders', 'products', 'suppliers', 'tasks'];
+      const collectionNames = ['customers', 'orders', 'products', 'suppliers', 'tasks', CRM_CORE_COLLECTIONS.accounts, CRM_CORE_COLLECTIONS.contacts, CRM_CORE_COLLECTIONS.locations, CRM_CORE_COLLECTIONS.accountLocationLinks];
 
       for (const collectionName of collectionNames) {
-        const snapshot = await getDocs(collection(db, `users/${dataId}/${collectionName}`));
-        if (snapshot.empty) continue;
-
         const deleteBatch = writeBatch(db);
-        snapshot.docs.forEach((entry) => deleteBatch.delete(entry.ref));
+        const legacySnapshot = await getDocs(collection(db, getLegacyCollectionPath(dataId, collectionName)));
+        legacySnapshot.docs.forEach((entry) => deleteBatch.delete(entry.ref));
+        const orgSnapshot = await getDocs(collection(db, getOrgCollectionPath(dataId, collectionName)));
+        orgSnapshot.docs.forEach((entry) => deleteBatch.delete(entry.ref));
+        if (legacySnapshot.empty && orgSnapshot.empty) continue;
         await deleteBatch.commit();
       }
 
       const seedBatch = writeBatch(db);
 
       initialCustomers.forEach((customer) => {
-        const payload = removeUndefined({ ...customer, uid: dataId });
-        seedBatch.set(doc(db, getLegacyCollectionPath(dataId, 'customers'), customer.id), payload);
-        seedBatch.set(
-          doc(db, getOrgCollectionPath(dataId, 'customers'), customer.id),
-          removeUndefined({ ...payload, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        );
+        const normalizedCustomer = normalizeCustomerStatus(customer);
+        const payload = removeUndefined({ ...normalizedCustomer, uid: dataId });
+        seedCanonicalRecord(seedBatch, db, dataId, 'customers', customer.id, payload);
+        seedCanonicalRecord(seedBatch, db, dataId, CRM_CORE_COLLECTIONS.accounts, customer.id, asFirestorePayload({ ...buildCanonicalAccountFromCustomer(normalizedCustomer, dataId) }));
+        seedCanonicalRecord(seedBatch, db, dataId, CRM_CORE_COLLECTIONS.contacts, `${customer.id}-primary`, asFirestorePayload({ ...buildPrimaryContactFromCustomer(normalizedCustomer, dataId) }));
+        const location = buildStubLocationForAccount(customer.id, dataId, normalizedCustomer.company || normalizedCustomer.name);
+        seedCanonicalRecord(seedBatch, db, dataId, CRM_CORE_COLLECTIONS.locations, location.id, asFirestorePayload({ ...location }));
+        seedCanonicalRecord(seedBatch, db, dataId, CRM_CORE_COLLECTIONS.accountLocationLinks, `${customer.id}-${location.id}`, asFirestorePayload({ ...buildPrimaryAccountLocationLink(customer.id, location.id, dataId, location.locationType) }));
       });
 
       initialProducts.forEach((product) => {
         const payload = removeUndefined({ ...product, uid: dataId });
-        seedBatch.set(doc(db, getLegacyCollectionPath(dataId, 'products'), product.id), payload);
-        seedBatch.set(
-          doc(db, getOrgCollectionPath(dataId, 'products'), product.id),
-          removeUndefined({ ...payload, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        );
+        seedCanonicalRecord(seedBatch, db, dataId, 'products', product.id, payload);
       });
 
       initialSuppliers.forEach((supplier) => {
-        seedBatch.set(
-          doc(db, `users/${dataId}/suppliers`, supplier.id),
-          removeUndefined({ ...supplier, uid: dataId })
-        );
+        const payload = removeUndefined({ ...supplier, uid: dataId });
+        seedCanonicalRecord(seedBatch, db, dataId, 'suppliers', supplier.id, payload);
       });
 
       initialTasks.forEach((task) => {
         const payload = removeUndefined({ ...task, uid: dataId });
-        seedBatch.set(doc(db, getLegacyCollectionPath(dataId, 'tasks'), task.id), payload);
-        seedBatch.set(
-          doc(db, getOrgCollectionPath(dataId, 'tasks'), task.id),
-          removeUndefined({ ...payload, orgId: dataId, sourceApp: 'foodcrm-pro' })
-        );
+        seedCanonicalRecord(seedBatch, db, dataId, 'tasks', task.id, payload);
       });
 
       initialOrders.forEach((order) => {
-        seedBatch.set(
-          doc(db, `users/${dataId}/orders`, order.id),
-          decorateOrderForStorage(order, dataId)
-        );
+        const payload = decorateOrderForStorage(order, dataId);
+        seedCanonicalRecord(seedBatch, db, dataId, 'orders', order.id, payload);
       });
 
       seedBatch.set(doc(db, 'users', dataId), { orgId: dataId }, { merge: true });
@@ -843,6 +965,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       await seedBatch.commit();
+      await writePlatformEvent(db, {
+        action: 'seeded',
+        actorEmail: user?.email,
+        actorUserId: user?.uid,
+        description: 'The shared CRM workspace was seeded with sample data.',
+        orgId: dataId,
+        recordId: 'shared-test-org',
+        recordType: 'workspace',
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${dataId} (seed shared test org)`);
       throw err;
@@ -890,6 +1021,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               <Button onClick={login} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
                 Sign in with Google
               </Button>
+              {authError ? <p className="text-xs text-rose-600">{authError}</p> : null}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t border-slate-200"></span>
@@ -957,20 +1089,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               </div>
             </form>
           )}
-        </div>
-        
-        <div className="flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-opacity">
-          <span className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">Powered by</span>
-          <div className="flex items-center gap-2 text-slate-700">
-            <img src={mergeLogo} alt="Merge Impact" className="w-8 h-8 object-contain" onError={(e) => {
-              e.currentTarget.style.display = 'none';
-              e.currentTarget.nextElementSibling?.classList.remove('hidden');
-            }} />
-            <div className="hidden w-8 h-8 rounded-full border-2 border-current flex items-center justify-center relative">
-              <div className="absolute bottom-0 w-5 h-4 bg-current rounded-t-full" style={{ clipPath: 'polygon(0 100%, 100% 100%, 100% 0, 50% 50%, 0 0)' }}></div>
-            </div>
-            <span className="text-lg font-bold tracking-tight">Merge Impact</span>
-          </div>
         </div>
       </div>
     );

@@ -4,7 +4,7 @@ import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
 import { Recipes } from './components/Recipes';
 import { BatchMixBuilder } from './components/BatchCalculator';
-import { auth, login, logout, onAuthStateChanged, type User, db } from './firebase';
+import { auth, crmDb, login, logout, onAuthStateChanged, type User, db } from './firebase';
 import { getDocs, onSnapshot, query, writeBatch, deleteField, doc } from 'firebase/firestore';
 import { type LocationDef } from './types';
 import { crmConfig } from './config';
@@ -17,6 +17,7 @@ import {
   withPlatformMetadata,
   writePlatformRecord,
 } from './lib/platformData';
+import { consumeToolLaunchSession, resolveToolLaunchSession } from './lib/launch';
 
 const normalizeLocation = (locationId: string, data: Partial<LocationDef>): LocationDef => ({
   id: locationId,
@@ -45,6 +46,7 @@ export default function App() {
   const [editingLocationName, setEditingLocationName] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [clientLogo, setClientLogo] = useState<string | null>(null);
+  const [launchMessage, setLaunchMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasHydratedCanonicalLocationsRef = useRef(false);
   const hasHydratedCanonicalBrandingRef = useRef(false);
@@ -62,6 +64,39 @@ export default function App() {
       setAuthReady(true);
     });
   }, []);
+
+  useEffect(() => {
+    const launchId = new URLSearchParams(window.location.search).get('launchId');
+    if (!launchId || !user) return;
+
+    let isMounted = true;
+
+    void (async () => {
+      const launch = await resolveToolLaunchSession({
+        db: crmDb,
+        launchId,
+        orgId: crmConfig.sharedOrgId,
+      });
+
+      if (!launch || launch.toolId !== 'remix' || launch.userId !== user.uid) return;
+
+      await consumeToolLaunchSession({
+        db: crmDb,
+        launchId,
+        orgId: crmConfig.sharedOrgId,
+      });
+
+      if (!isMounted) return;
+      setLaunchMessage(`Opened from Platform Home for ${user.email}.`);
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('launchId');
+      window.history.replaceState({}, '', nextUrl.toString());
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     const orgBrandingRef = doc(db, 'orgs', crmConfig.sharedOrgId, 'settings', 'branding');
@@ -702,6 +737,11 @@ export default function App() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 lg:pb-8">
+          {launchMessage ? (
+            <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
+              {launchMessage}
+            </div>
+          ) : null}
           {activeTab === 'dashboard' && <Dashboard locationId={activeLocationId} />}
           {activeTab === 'inventory' && <Inventory locationId={activeLocationId} />}
           {activeTab === 'recipes' && <Recipes locationId={activeLocationId} />}

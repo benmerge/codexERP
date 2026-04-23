@@ -12,6 +12,8 @@ export const crmAppConfig = {
   sharedOrgId: normalizeOptional(import.meta.env.VITE_CRM_SHARED_ORG_ID) ?? DEFAULT_SHARED_ORG_ID,
   ordersCollection: normalizeOptional(import.meta.env.VITE_CRM_ORDERS_COLLECTION) ?? 'orders',
   appUrl: normalizeOptional(import.meta.env.VITE_CRM_APP_URL) ?? 'https://foodcrm-pro-1015963821956.us-west1.run.app/',
+  dataCoopAppUrl: normalizeOptional(import.meta.env.VITE_DATA_COOP_APP_URL) ?? '/data-coop',
+  ecoStackAppUrl: normalizeOptional(import.meta.env.VITE_ECOSTACK_APP_URL) ?? '/eco-stack',
   remixAppUrl:
     normalizeOptional(import.meta.env.VITE_MIREMIX_APP_URL) ??
     'https://gen-lang-client-0021754998.web.app/',

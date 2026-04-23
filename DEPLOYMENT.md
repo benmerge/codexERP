@@ -28,6 +28,8 @@ Publish rules after any change to access control:
 
 Use [foodcrm-pro/firestore.rules](/Users/baimac/Documents/Playground/foodcrm-pro/firestore.rules) against database `ai-studio-af887f16-decc-48d2-b6b7-47c85e2eed76`.
 
+If Data Coop evidence uploads are in use, publish [foodcrm-pro/storage.rules](/Users/baimac/Documents/Playground/codexERP/foodcrm-pro/storage.rules) to the same Firebase project so member uploads and reviewer reads work in production.
+
 ### MiRemix MRP
 
 Use [miremix-mrp/firestore.rules](/Users/baimac/Documents/Playground/miremix-mrp/firestore.rules) against database `ai-studio-eb8d88f4-51e8-4643-b410-dd1062becfc3`.

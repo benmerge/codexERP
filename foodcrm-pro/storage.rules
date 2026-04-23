@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isPlatformAdmin() {
+      return isAuthenticated() &&
+             request.auth.token.email_verified == true &&
+             (request.auth.token.email.lower() == "ben@mergeimpact.com" ||
+              request.auth.token.email.lower() == "jon@mergeimpact.com");
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+             exists(/databases/(default)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function isCoopMember(orgId, memberId) {
+      return isAuthenticated() &&
+             request.auth.uid == memberId &&
+             exists(/databases/(default)/documents/orgs/$(orgId)/coop_members/$(memberId));
+    }
+
+    match /orgs/{orgId}/data-assets/{memberId}/{assetType}/{fileName} {
+      allow read: if isPlatformAdmin() || isOrgMember(orgId) || isCoopMember(orgId, memberId);
+      allow write: if isPlatformAdmin() || isCoopMember(orgId, memberId);
+      allow delete: if isPlatformAdmin() || isCoopMember(orgId, memberId);
+    }
+  }
+}
